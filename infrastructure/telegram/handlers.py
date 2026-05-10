@@ -288,8 +288,7 @@ async def cb_quick_action(query: CallbackQuery) -> None:
             payload=payload,
             source_type='telegram_quick_action',
         )
-        if query.message:
-            await query.message.answer('⚠️ Ошибка — повторю попытку автоматически')
+        await query.answer('⚠️ Ошибка — повторю попытку автоматически')
 
 
 # ── Event inline edit callbacks ───────────────────────────────────────────────
@@ -325,7 +324,7 @@ async def cb_ev_del(query: CallbackQuery, state: FSMContext) -> None:
     await _update_summary_events(state, msg.message_id, events)
 
     if not events:
-        await msg.delete()
+        await msg.edit_text('Все события удалены', reply_markup=None)
     else:
         await msg.edit_text(_format_events({'events': events}), reply_markup=event_summary_keyboard(events))
 

@@ -288,7 +288,7 @@ async def test_cb_ev_sub_preserves_duration_min() -> None:
 
     _, kwargs = api.update_event.call_args
     assert kwargs['payload'].get('duration_min') == 30
-    assert kwargs['type'] == 'bath'
+    assert kwargs['event_type'] == 'bath'
 
 
 async def test_cb_ev_sub_no_compatible_fields() -> None:
