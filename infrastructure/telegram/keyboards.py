@@ -4,43 +4,11 @@ from zoneinfo import ZoneInfo
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from domain.quick_actions import ACTION_MAP, QUICK_ACTIONS
+
 _MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
-# (callback_id, label, event_type, payload)
-# event_type=None → special action (not an API event)
-QUICK_ACTIONS: list[tuple[str, str, str | None, dict[str, Any] | None]] = [
-    # ── Feeding ───────────────────────────────────────────────────────────────
-    ('feed_left', '🍼 Левая', 'feed_breast', {'side': 'left'}),
-    ('feed_right', '🍼 Правая', 'feed_breast', {'side': 'right'}),
-    ('feed_bottle_formula', '🍶 Смесь', 'feed_bottle', {'contents': 'formula'}),
-    ('feed_bottle_expr', '🍶 Сцеженное', 'feed_bottle', {'contents': 'expressed'}),
-    ('pump', '🥛 Сцедила', 'pump', {}),
-    # ── Diaper ────────────────────────────────────────────────────────────────
-    ('diaper_pee', '💧 Пописал', 'diaper', {'kind': 'pee'}),
-    ('diaper_poo', '💩 Покакал', 'diaper', {'kind': 'poo'}),
-    ('diaper_unknown', '🚼 Подгузник', 'diaper', {'kind': 'unknown'}),
-    # ── Sleep ─────────────────────────────────────────────────────────────────
-    ('sleep_start', '😴 Заснул', 'sleep_start', {}),
-    ('sleep_end', '🌅 Проснулся', 'sleep_end', {}),
-    # ── Activities ────────────────────────────────────────────────────────────
-    ('bath', '🛁 Купание', 'bath', {}),
-    ('tummy_time', '🤸 На животике', 'tummy_time', {}),
-    # ── Symptoms ─────────────────────────────────────────────────────────────
-    ('spit_up_small', '🤧 Срыгнул чуть', 'spit_up', {'volume': 'small'}),
-    ('spit_up_large', '🤮 Срыгнул много', 'spit_up', {'volume': 'large'}),
-    ('gas', '💨 Газики', 'gas', {}),
-    # ── Medication ───────────────────────────────────────────────────────────
-    ('vitamin_d', '💊 Витамин Д', 'medication', {'name': 'Витамин Д'}),
-    # ── Other ─────────────────────────────────────────────────────────────────
-    ('ask_mode', '❓ Спросить', None, None),
-]
-
-# Maps callback_data → (event_type, payload)  (excludes special actions)
-ACTION_MAP: dict[str, tuple[str, dict[str, Any]]] = {
-    action_id: (etype, payload)
-    for action_id, _, etype, payload in QUICK_ACTIONS
-    if etype is not None and payload is not None
-}
+__all__ = ['ACTION_MAP', 'event_summary_keyboard', 'main_keyboard', 'type_change_keyboard']
 
 # Sub-keyboard sections: (section_label, [action_ids])
 _SECTIONS = [

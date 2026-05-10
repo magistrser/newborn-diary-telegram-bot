@@ -12,14 +12,12 @@ import pytest
 
 from application.services.action_retry_queue import (
     ActionRetryQueue,
-    PendingAction,
     _execute,
     get_retry_queue,
     set_retry_queue,
 )
-from settings import DiaryApiSettings
+from domain.pending_action import PendingAction
 
-_API_SETTINGS = DiaryApiSettings(base_url='http://test', request_timeout_sec=10)
 _NOW = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
 
 
@@ -44,10 +42,21 @@ class InMemoryRepo:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _make_queue(initial: list[PendingAction] | None = None, interval_min: int = 10) -> ActionRetryQueue:
+def _make_api_client() -> AsyncMock:
+    client = AsyncMock()
+    client.parse_text = AsyncMock()
+    client.create_event = AsyncMock()
+    return client
+
+
+def _make_queue(
+    initial: list[PendingAction] | None = None,
+    interval_min: int = 10,
+    api_client: AsyncMock | None = None,
+) -> ActionRetryQueue:
     return ActionRetryQueue(
         repo=InMemoryRepo(initial),
-        diary_api_settings=_API_SETTINGS,
+        diary_api=api_client or _make_api_client(),
         retry_interval_min=interval_min,
     )
 
@@ -84,7 +93,7 @@ def _make_create_event_action(**overrides: Any) -> PendingAction:
 async def test_initialize_loads_existing_actions() -> None:
     pre_loaded = [_make_parse_text_action(), _make_create_event_action()]
     repo = InMemoryRepo(pre_loaded)
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
     await queue.initialize()
     assert queue.pending_count == 2
 
@@ -99,7 +108,7 @@ async def test_initialize_with_empty_db_is_fine() -> None:
 
 async def test_enqueue_parse_text_adds_to_in_memory_and_repo() -> None:
     repo = InMemoryRepo()
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
 
     action_id = await queue.enqueue_parse_text(
         text='Поел',
@@ -120,7 +129,7 @@ async def test_enqueue_parse_text_adds_to_in_memory_and_repo() -> None:
 
 async def test_enqueue_parse_text_persists_occurred_at_as_iso() -> None:
     repo = InMemoryRepo()
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
     await queue.enqueue_parse_text(text='x', occurred_at=_NOW, source_type='telegram_live')
 
     action = next(iter(repo.store.values()))
@@ -132,7 +141,7 @@ async def test_enqueue_parse_text_persists_occurred_at_as_iso() -> None:
 
 async def test_enqueue_create_event_adds_to_in_memory_and_repo() -> None:
     repo = InMemoryRepo()
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
 
     action_id = await queue.enqueue_create_event(
         event_type='diaper',
@@ -152,14 +161,11 @@ async def test_enqueue_create_event_adds_to_in_memory_and_repo() -> None:
 async def test_retry_once_removes_action_on_success() -> None:
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    mock_client = _make_api_client()
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
+
     await queue.initialize()
-
-    mock_client = AsyncMock()
-    mock_client.parse_text = AsyncMock()
-
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        succeeded, failed = await queue.retry_once()
+    succeeded, failed = await queue.retry_once()
 
     assert succeeded == 1
     assert failed == 0
@@ -170,14 +176,11 @@ async def test_retry_once_removes_action_on_success() -> None:
 async def test_retry_once_create_event_success() -> None:
     action = _make_create_event_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    mock_client = _make_api_client()
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
+
     await queue.initialize()
-
-    mock_client = AsyncMock()
-    mock_client.create_event = AsyncMock()
-
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        succeeded, failed = await queue.retry_once()
+    succeeded, failed = await queue.retry_once()
 
     assert succeeded == 1
     assert failed == 0
@@ -189,14 +192,12 @@ async def test_retry_once_create_event_success() -> None:
 async def test_retry_once_keeps_action_on_server_error() -> None:
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
-    await queue.initialize()
-
-    mock_client = AsyncMock()
+    mock_client = _make_api_client()
     mock_client.parse_text = AsyncMock(side_effect=Exception('server down'))
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
 
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        succeeded, failed = await queue.retry_once()
+    await queue.initialize()
+    succeeded, failed = await queue.retry_once()
 
     assert succeeded == 0
     assert failed == 1
@@ -207,15 +208,13 @@ async def test_retry_once_keeps_action_on_server_error() -> None:
 async def test_retry_once_increments_attempt_count() -> None:
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
-    await queue.initialize()
-
-    mock_client = AsyncMock()
+    mock_client = _make_api_client()
     mock_client.parse_text = AsyncMock(side_effect=Exception('down'))
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
 
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        await queue.retry_once()
-        await queue.retry_once()
+    await queue.initialize()
+    await queue.retry_once()
+    await queue.retry_once()
 
     assert repo.store[action.id].attempt_count == 2
 
@@ -223,14 +222,12 @@ async def test_retry_once_increments_attempt_count() -> None:
 async def test_retry_once_persists_updated_attempt_count_on_failure() -> None:
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
-    await queue.initialize()
-
-    mock_client = AsyncMock()
+    mock_client = _make_api_client()
     mock_client.parse_text = AsyncMock(side_effect=Exception('down'))
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
 
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        await queue.retry_once()
+    await queue.initialize()
+    await queue.retry_once()
 
     assert repo.store[action.id].attempt_count == 1
 
@@ -250,15 +247,12 @@ async def test_retry_once_handles_mixed_success_failure() -> None:
     good = _make_parse_text_action()
     bad = _make_create_event_action()
     repo = InMemoryRepo([good, bad])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
-    await queue.initialize()
-
-    mock_client = AsyncMock()
-    mock_client.parse_text = AsyncMock()
+    mock_client = _make_api_client()
     mock_client.create_event = AsyncMock(side_effect=Exception('nope'))
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client)
 
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        succeeded, failed = await queue.retry_once()
+    await queue.initialize()
+    succeeded, failed = await queue.retry_once()
 
     assert succeeded == 1
     assert failed == 1
@@ -275,20 +269,17 @@ async def test_restart_loads_failed_actions_and_retries() -> None:
     repo = InMemoryRepo([action])  # shared repo simulates the persistent DB
 
     # "First run" — server was down, action was queued
-    queue_run1 = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue_run1 = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
     await queue_run1.initialize()
     assert queue_run1.pending_count == 1
 
     # "Restart" — new queue instance, same repo (DB persists)
-    queue_run2 = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    mock_client = _make_api_client()
+    queue_run2 = ActionRetryQueue(repo=repo, diary_api=mock_client)
     await queue_run2.initialize()
     assert queue_run2.pending_count == 1   # loaded from DB
 
-    mock_client = AsyncMock()
-    mock_client.parse_text = AsyncMock()
-
-    with patch('application.services.action_retry_queue.DiaryApiClient', return_value=mock_client):
-        succeeded, failed = await queue_run2.retry_once()
+    succeeded, failed = await queue_run2.retry_once()
 
     assert succeeded == 1
     assert failed == 0
@@ -300,7 +291,7 @@ async def test_restart_loads_failed_actions_and_retries() -> None:
 
 async def test_pending_count_reflects_queue_size() -> None:
     repo = InMemoryRepo()
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
 
     assert queue.pending_count == 0
     await queue.enqueue_parse_text(text='a', occurred_at=_NOW, source_type='telegram_live')
@@ -317,7 +308,7 @@ async def test_retry_loop_calls_retry_once_after_interval() -> None:
     """Drive _retry_loop directly: instant sleep on first call, CancelledError on second."""
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    queue = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS, retry_interval_min=10)
+    queue = ActionRetryQueue(repo=repo, diary_api=_make_api_client(), retry_interval_min=10)
     await queue.initialize()
 
     call_count = 0
@@ -369,7 +360,7 @@ async def test_stop_cancels_task() -> None:
 
 async def test_set_and_get_retry_queue() -> None:
     repo = InMemoryRepo()
-    q = ActionRetryQueue(repo=repo, diary_api_settings=_API_SETTINGS)
+    q = ActionRetryQueue(repo=repo, diary_api=_make_api_client())
     set_retry_queue(q)
     assert get_retry_queue() is q
 

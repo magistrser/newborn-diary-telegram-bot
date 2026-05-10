@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from application.services.action_retry_queue import ActionRetryQueue, set_retry_queue
 from infrastructure.models import Base
-from settings import DiaryApiSettings
 
 
 class _InMemoryRepo:
@@ -34,12 +33,14 @@ def application_client() -> Generator[TestClient, None, None]:
     from main import app
 
     # Wire up a no-op retry queue so handlers can call get_retry_queue()
-    _api_settings = DiaryApiSettings(base_url='http://test', request_timeout_sec=10)
-    queue = ActionRetryQueue(repo=_InMemoryRepo(), diary_api_settings=_api_settings)
+    api_client = AsyncMock()
+    api_client.parse_text = AsyncMock()
+    api_client.create_event = AsyncMock()
+    queue = ActionRetryQueue(repo=_InMemoryRepo(), diary_api=api_client)
     set_retry_queue(queue)
 
-    with patch('main.start_polling', new_callable=AsyncMock), \
-         patch('main.stop_polling', new_callable=AsyncMock):
+    with patch('infrastructure.telegram.runner.start_polling', new_callable=AsyncMock), \
+         patch('infrastructure.telegram.runner.stop_polling', new_callable=AsyncMock):
         with TestClient(app) as client:
             yield client
 

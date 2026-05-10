@@ -107,11 +107,17 @@ inference for a single message can take 10–30 seconds depending on the model s
 
 ```
 telegram_adapter/
+├── domain/
+│   ├── pending_action.py          — retry action model
+│   ├── policies.py                — access policy + compatible payload merge rules
+│   └── quick_actions.py           — quick-action command definitions
 ├── application/
+│   ├── ports.py                   — diary API and pending-action repository ports
 │   └── services/
-│       ├── diary_api_client.py     — async httpx client wrapping newborn_diary endpoints
-│       └── action_retry_queue.py   — persistent retry queue (Pydantic model + asyncio loop)
+│       └── action_retry_queue.py   — persistent retry queue orchestration
 ├── infrastructure/
+│   ├── composition.py             — FastAPI/client/retry-queue composition root
+│   ├── diary_api_client.py        — async httpx client wrapping newborn_diary endpoints
 │   ├── telegram/
 │   │   ├── handlers.py             — all aiogram message / callback handlers + FSM states
 │   │   ├── keyboards.py            — inline keyboard builders + ACTION_MAP
@@ -251,7 +257,7 @@ handlers — uvicorn owns signal handling.
 
 ---
 
-## DiaryApiClient (`application/services/diary_api_client.py`)
+## DiaryApiClient (`infrastructure/diary_api_client.py`)
 
 Thin async httpx wrapper around `newborn_diary`. Every call opens a new `httpx.AsyncClient` and
 closes it on completion. Methods:

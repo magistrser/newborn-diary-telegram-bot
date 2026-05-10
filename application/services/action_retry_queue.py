@@ -17,34 +17,13 @@ Architecture
 """
 import asyncio
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, Field
-
-from application.services.diary_api_client import DiaryApiClient
-from settings import DiaryApiSettings
+from application.ports import DiaryApiPort, PendingActionsRepositoryPort
+from domain.pending_action import PendingAction
 
 logger = logging.getLogger(__name__)
-
-
-# ── domain model ──────────────────────────────────────────────────────────────
-
-class PendingAction(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    action_type: str          # 'parse_text' | 'create_event'
-    created_at: str           # ISO-8601
-    attempt_count: int = 0
-    # parse_text
-    text: str | None = None
-    occurred_at: str | None = None   # ISO-8601
-    source_type: str | None = None
-    source_message_id: str | None = None
-    source_chat_id: int | None = None
-    # create_event
-    event_type: str | None = None
-    payload: dict[str, Any] | None = None
 
 
 # ── queue ─────────────────────────────────────────────────────────────────────
@@ -61,12 +40,12 @@ class ActionRetryQueue:
 
     def __init__(
         self,
-        repo: Any,
-        diary_api_settings: DiaryApiSettings,
+        repo: PendingActionsRepositoryPort,
+        diary_api: DiaryApiPort,
         retry_interval_min: int = 10,
     ) -> None:
         self._repo = repo
-        self._api_settings = diary_api_settings
+        self._diary_api = diary_api
         self._interval_min = retry_interval_min
         self._actions: dict[str, PendingAction] = {}
         self._task: asyncio.Task | None = None
@@ -132,7 +111,6 @@ class ActionRetryQueue:
         if not self._actions:
             return 0, 0
 
-        client = DiaryApiClient(self._api_settings)
         succeeded = 0
         failed = 0
 
@@ -142,7 +120,7 @@ class ActionRetryQueue:
                 continue
             action.attempt_count += 1
             try:
-                await _execute(client, action)
+                await _execute(self._diary_api, action)
                 del self._actions[action_id]
                 await self._repo.delete(action_id)
                 succeeded += 1
@@ -206,7 +184,7 @@ def get_retry_queue() -> ActionRetryQueue:
 
 # ── execution helper ──────────────────────────────────────────────────────────
 
-async def _execute(client: DiaryApiClient, action: PendingAction) -> None:
+async def _execute(client: DiaryApiPort, action: PendingAction) -> None:
     occurred_at = (
         datetime.fromisoformat(action.occurred_at)
         if action.occurred_at

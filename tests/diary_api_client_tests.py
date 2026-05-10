@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from application.services.diary_api_client import DiaryApiClient
+from infrastructure.diary_api_client import DiaryApiClient
 from settings import DiaryApiSettings
 
 

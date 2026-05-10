@@ -8,7 +8,6 @@ from settings import DiaryApiSettings
 
 
 class DiaryApiClient:
-
     def __init__(self, api_settings: DiaryApiSettings) -> None:
         self._base_url = api_settings.base_url.rstrip('/')
         self._timeout = api_settings.request_timeout_sec

@@ -33,4 +33,4 @@ jobs:
         run: flake8
 
       - name: pytest
-        run: pytest -s --color=yes --cov=application --cov=infrastructure --cov-config=.coverage_conf --cov-fail-under 70
+        run: pytest -s --color=yes --cov=application --cov=domain --cov=infrastructure --cov-config=.coverage_conf --cov-fail-under 70

@@ -2,7 +2,7 @@ from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from application.services.action_retry_queue import PendingAction
+from domain.pending_action import PendingAction
 from infrastructure.models.base import Base
 from infrastructure.models.pending_action import PendingActionModel
 

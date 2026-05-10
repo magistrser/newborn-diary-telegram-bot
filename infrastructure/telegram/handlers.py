@@ -16,17 +16,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from application.services.action_retry_queue import ActionRetryQueue, get_retry_queue
-from application.services.diary_api_client import DiaryApiClient
-from infrastructure.telegram.keyboards import (
-    ACTION_MAP,
-    event_summary_keyboard,
-    main_keyboard,
-    type_change_keyboard,
-)
+from domain.policies import is_allowed, merge_compatible_payload_fields
+from domain.quick_actions import ACTION_MAP
+from infrastructure.diary_api_client import DiaryApiClient
+from infrastructure.telegram.keyboards import event_summary_keyboard, main_keyboard, type_change_keyboard
 from settings import settings
 
 _MOSCOW_TZ = ZoneInfo('Europe/Moscow')
-_COMMON_FIELDS = {'duration_min'}  # payload fields preserved across type changes
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +38,12 @@ class EditState(StatesGroup):
 
 
 def _is_allowed(chat_id: int, author: str | None) -> bool:
-    allowed_chats = settings.telegram.allowed_chat_ids
-    allowed_authors = settings.telegram.allowed_authors
-    if allowed_chats and chat_id not in allowed_chats:
-        return False
-    if allowed_authors and author and author not in allowed_authors:
-        return False
-    return True
+    return is_allowed(
+        chat_id=chat_id,
+        author=author,
+        allowed_chat_ids=settings.telegram.allowed_chat_ids,
+        allowed_authors=settings.telegram.allowed_authors,
+    )
 
 
 def _get_client() -> DiaryApiClient:
@@ -454,10 +449,7 @@ async def cb_ev_sub(query: CallbackQuery, state: FSMContext) -> None:
         return
 
     old_payload: dict = old_event.get('payload', {})
-    merged = dict(preset_payload)
-    for field in _COMMON_FIELDS:
-        if field in old_payload and field not in merged:
-            merged[field] = old_payload[field]
+    merged = merge_compatible_payload_fields(preset_payload, old_payload)
 
     try:
         updated = await _get_client().update_event(event_id, event_type=new_type, payload=merged)

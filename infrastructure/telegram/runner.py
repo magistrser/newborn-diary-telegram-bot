@@ -8,12 +8,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from application.services.action_retry_queue import (
-    ActionRetryQueue,
-    set_retry_queue,
-)
+from application.services.action_retry_queue import ActionRetryQueue, set_retry_queue
+from infrastructure.composition import TelegramAdapterApplicationFactory
 from infrastructure.repositories.fsm_state_storage import SqlFsmStorage
-from infrastructure.repositories.pending_action_repository import SqlPendingActionsRepository
 from infrastructure.telegram.handlers import router
 from settings import PostgresSettings, settings
 
@@ -50,11 +47,9 @@ async def start_polling() -> None:
     _state.engine = settings.postgres.create_engine()
     session_factory = async_sessionmaker(_state.engine, expire_on_commit=False)
 
-    repo = SqlPendingActionsRepository(_state.engine, session_factory)
-    _state.retry_queue = ActionRetryQueue(
-        repo=repo,
-        diary_api_settings=settings.diary_api,
-        retry_interval_min=settings.retry.interval_min,
+    _state.retry_queue = TelegramAdapterApplicationFactory.action_retry_queue(
+        _state.engine,
+        session_factory,
     )
     await _state.retry_queue.initialize()
     _state.retry_queue.start()
