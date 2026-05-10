@@ -1,0 +1,8 @@
+telegram:
+  bot_token: "your-bot-token-here"
+  allowed_chat_ids: []
+  allowed_authors: []
+
+diary_api:
+  base_url: http://localhost:8001
+  request_timeout_sec: 660

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          allow-prereleases: true
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv pip install --system -r pyproject.toml --group dev
+
+      - name: Prepare dev settings
+        run: cp settings.dev.yml.example settings.dev.yml
+
+      - name: mypy
+        run: mypy .
+
+      - name: flake8
+        run: flake8
+
+      - name: pytest
+        run: pytest -s --color=yes --cov=application --cov=infrastructure --cov-config=.coverage_conf --cov-fail-under 70

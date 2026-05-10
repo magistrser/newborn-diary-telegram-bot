@@ -1,0 +1,25 @@
+[project]
+name = "telegram_adapter"
+version = "0.1.0"
+description = "Telegram bot adapter for newborn diary"
+readme = "README.md"
+requires-python = ">=3.14.3"
+dependencies = [
+    "aiogram>=3.13",
+    "fastapi[standard]>=0.135.3",
+    "httpx>=0.27",
+    "prometheus-client>=0.24.1",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.3.0",
+    "flake8-import-order>=0.19.2",
+    "mypy>=1.20.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "types-pyyaml>=6.0.12.20250915",
+]
