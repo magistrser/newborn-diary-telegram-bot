@@ -34,7 +34,6 @@ async def start_polling() -> None:
 
 
 async def stop_polling() -> None:
-    global _bot, _polling_task
     if _polling_task:
         _polling_task.cancel()
         try:

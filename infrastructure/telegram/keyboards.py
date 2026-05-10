@@ -6,29 +6,29 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 # event_type=None → special action (not an API event)
 QUICK_ACTIONS: list[tuple[str, str, str | None, dict[str, Any] | None]] = [
     # ── Feeding ───────────────────────────────────────────────────────────────
-    ('feed_left',          '🍼 Левая',         'feed_breast',  {'side': 'left'}),
-    ('feed_right',         '🍼 Правая',        'feed_breast',  {'side': 'right'}),
-    ('feed_bottle_formula','🍶 Смесь',          'feed_bottle',  {'contents': 'formula'}),
-    ('feed_bottle_expr',   '🍶 Сцеженное',      'feed_bottle',  {'contents': 'expressed'}),
-    ('pump',               '🥛 Сцедила',        'pump',         {}),
+    ('feed_left', '🍼 Левая', 'feed_breast', {'side': 'left'}),
+    ('feed_right', '🍼 Правая', 'feed_breast', {'side': 'right'}),
+    ('feed_bottle_formula', '🍶 Смесь', 'feed_bottle', {'contents': 'formula'}),
+    ('feed_bottle_expr', '🍶 Сцеженное', 'feed_bottle', {'contents': 'expressed'}),
+    ('pump', '🥛 Сцедила', 'pump', {}),
     # ── Diaper ────────────────────────────────────────────────────────────────
-    ('diaper_pee',         '💧 Пописал',       'diaper',       {'kind': 'pee'}),
-    ('diaper_poo',         '💩 Покакал',       'diaper',       {'kind': 'poo'}),
-    ('diaper_unknown',     '🚼 Подгузник',     'diaper',       {'kind': 'unknown'}),
+    ('diaper_pee', '💧 Пописал', 'diaper', {'kind': 'pee'}),
+    ('diaper_poo', '💩 Покакал', 'diaper', {'kind': 'poo'}),
+    ('diaper_unknown', '🚼 Подгузник', 'diaper', {'kind': 'unknown'}),
     # ── Sleep ─────────────────────────────────────────────────────────────────
-    ('sleep_start',        '😴 Заснул',        'sleep_start',  {}),
-    ('sleep_end',          '🌅 Проснулся',     'sleep_end',    {}),
+    ('sleep_start', '😴 Заснул', 'sleep_start', {}),
+    ('sleep_end', '🌅 Проснулся', 'sleep_end', {}),
     # ── Activities ────────────────────────────────────────────────────────────
-    ('bath',               '🛁 Купание',        'bath',         {}),
-    ('tummy_time',         '🤸 На животике',    'tummy_time',   {}),
+    ('bath', '🛁 Купание', 'bath', {}),
+    ('tummy_time', '🤸 На животике', 'tummy_time', {}),
     # ── Symptoms ─────────────────────────────────────────────────────────────
-    ('spit_up_small',      '🤧 Срыгнул чуть',  'spit_up',      {'volume': 'small'}),
-    ('spit_up_large',      '🤮 Срыгнул много', 'spit_up',      {'volume': 'large'}),
-    ('gas',                '💨 Газики',         'gas',          {}),
+    ('spit_up_small', '🤧 Срыгнул чуть', 'spit_up', {'volume': 'small'}),
+    ('spit_up_large', '🤮 Срыгнул много', 'spit_up', {'volume': 'large'}),
+    ('gas', '💨 Газики', 'gas', {}),
     # ── Medication ───────────────────────────────────────────────────────────
-    ('vitamin_d',          '💊 Витамин Д',      'medication',   {'name': 'Витамин Д'}),
+    ('vitamin_d', '💊 Витамин Д', 'medication', {'name': 'Витамин Д'}),
     # ── Other ─────────────────────────────────────────────────────────────────
-    ('ask_mode',           '❓ Спросить',      None,           None),
+    ('ask_mode', '❓ Спросить', None, None),
 ]
 
 # Maps callback_data → (event_type, payload)  (excludes special actions)
@@ -40,12 +40,12 @@ ACTION_MAP: dict[str, tuple[str, dict[str, Any]]] = {
 
 # Sub-keyboard sections: (section_label, [action_ids])
 _SECTIONS = [
-    ('🍼 Кормление',  ['feed_left', 'feed_right', 'feed_bottle_formula', 'feed_bottle_expr', 'pump']),
-    ('🚼 Подгузник',  ['diaper_pee', 'diaper_poo', 'diaper_unknown']),
-    ('😴 Сон',        ['sleep_start', 'sleep_end']),
+    ('🍼 Кормление', ['feed_left', 'feed_right', 'feed_bottle_formula', 'feed_bottle_expr', 'pump']),
+    ('🚼 Подгузник', ['diaper_pee', 'diaper_poo', 'diaper_unknown']),
+    ('😴 Сон', ['sleep_start', 'sleep_end']),
     ('🤸 Активность', ['bath', 'tummy_time']),
-    ('🤧 Симптомы',   ['spit_up_small', 'spit_up_large', 'gas']),
-    ('💊 Прочее',     ['vitamin_d', 'ask_mode']),
+    ('🤧 Симптомы', ['spit_up_small', 'spit_up_large', 'gas']),
+    ('💊 Прочее', ['vitamin_d', 'ask_mode']),
 ]
 
 _ACTION_BY_ID = {a[0]: a for a in QUICK_ACTIONS}

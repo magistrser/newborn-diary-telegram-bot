@@ -1,5 +1,5 @@
 """Async HTTP client for the diary_api service."""
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
