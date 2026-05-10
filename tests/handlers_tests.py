@@ -3,8 +3,6 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 _SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 _SUMMARY_MSG_ID = 9001
 
@@ -220,7 +218,9 @@ async def test_cb_ev_sub_preserves_duration_min() -> None:
     from infrastructure.telegram.handlers import cb_ev_sub
 
     old_payload = {'duration_min': 30}
-    events = [{'id': _SAMPLE_UUID, 'type': 'sleep_end', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': old_payload}]
+    events = [
+        {'id': _SAMPLE_UUID, 'type': 'sleep_end', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': old_payload},
+    ]
     state = _make_fsm({str(_SUMMARY_MSG_ID): events})
     query = _make_callback(f'ev_sub:{_SAMPLE_UUID}:bath')
     api = _make_api_client()
@@ -243,7 +243,9 @@ async def test_cb_ev_sub_no_compatible_fields() -> None:
     from infrastructure.telegram.handlers import cb_ev_sub
 
     old_payload = {'grams': 4200}
-    events = [{'id': _SAMPLE_UUID, 'type': 'weight', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': old_payload}]
+    events = [
+        {'id': _SAMPLE_UUID, 'type': 'weight', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': old_payload},
+    ]
     state = _make_fsm({str(_SUMMARY_MSG_ID): events})
     query = _make_callback(f'ev_sub:{_SAMPLE_UUID}:bath')
     api = _make_api_client()

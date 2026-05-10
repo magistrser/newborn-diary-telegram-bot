@@ -31,9 +31,9 @@ def get_settings() -> Settings:
         case 'PRODUCTION':
             settings_path = root_dir / 'settings.yml'
         case invalid:
-            raise Exception(f'Failed to initialize settings. Invalid ENVIRONMENT variable: {invalid}')
+            raise ValueError(f'Failed to initialize settings. Invalid ENVIRONMENT variable: {invalid}')
 
-    with open(settings_path, 'r') as settings_file:
+    with open(settings_path, 'r', encoding='utf-8') as settings_file:
         return Settings.model_validate(safe_load(settings_file))
 
 

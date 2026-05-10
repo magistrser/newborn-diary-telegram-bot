@@ -1,7 +1,5 @@
 from fastapi.testclient import TestClient
 
-from .lib.fixtures import application_client
-
 
 async def test_health_check(application_client: TestClient) -> None:
     response = application_client.get('/health')

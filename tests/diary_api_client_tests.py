@@ -1,9 +1,6 @@
 """Tests for DiaryApiClient — mock httpx at the transport level."""
-import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from application.services.diary_api_client import DiaryApiClient
 from settings import DiaryApiSettings

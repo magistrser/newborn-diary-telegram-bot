@@ -1,5 +1,4 @@
 """Pure-function tests for keyboard builders."""
-import pytest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from infrastructure.telegram.keyboards import (
@@ -12,7 +11,10 @@ _SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 _EVENTS = [
     {'id': _SAMPLE_UUID, 'type': 'sleep_start', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': {}},
-    {'id': 'bbbbbbbb-0000-0000-0000-000000000000', 'type': 'diaper', 'occurred_at': '2026-05-10T10:05:00+03:00', 'payload': {'kind': 'pee'}},
+    {
+        'id': 'bbbbbbbb-0000-0000-0000-000000000000', 'type': 'diaper',
+        'occurred_at': '2026-05-10T10:05:00+03:00', 'payload': {'kind': 'pee'},
+    },
 ]
 
 
@@ -29,7 +31,7 @@ def test_event_summary_keyboard_row_count() -> None:
 def test_event_summary_keyboard_callback_data_prefixes() -> None:
     kb = event_summary_keyboard(_EVENTS)
     event_rows = kb.inline_keyboard[:-1]
-    for i, (event, row) in enumerate(zip(_EVENTS, event_rows)):
+    for _, (event, row) in enumerate(zip(_EVENTS, event_rows)):
         eid = event['id']
         cbs = [btn.callback_data for btn in row if btn.callback_data is not None]
         assert any(cb.startswith(f'ev_tm:{eid}') for cb in cbs)
