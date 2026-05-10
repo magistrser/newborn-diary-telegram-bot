@@ -1,0 +1,20 @@
+telegram:
+  bot_token: "test-bot-token"
+  allowed_chat_ids:
+    - -1003551397696
+  allowed_authors: []
+
+diary_api:
+  base_url: http://localhost:8001
+  request_timeout_sec: 660
+
+postgres:
+  host: localhost
+  port: 5432
+  db_name: telegram_adapter_test
+  user: postgres
+  password: postgres
+  pool_size: 4
+
+retry:
+  interval_min: 10

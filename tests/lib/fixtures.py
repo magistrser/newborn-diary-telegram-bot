@@ -1,9 +1,9 @@
-from typing import AsyncGenerator, Generator
+from typing import Any, AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from application.services.action_retry_queue import ActionRetryQueue, set_retry_queue
 from infrastructure.models import Base
@@ -22,7 +22,7 @@ class _InMemoryRepo:
     async def load_all(self) -> list:
         return []
 
-    async def upsert(self, action) -> None:
+    async def upsert(self, action: Any) -> None:
         self._store[action.id] = action
 
     async def delete(self, action_id: str) -> None:

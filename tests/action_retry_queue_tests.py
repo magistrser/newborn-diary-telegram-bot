@@ -5,6 +5,7 @@ SqlPendingActionsRepository tests mock the SQLAlchemy session factory.
 """
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -51,7 +52,7 @@ def _make_queue(initial: list[PendingAction] | None = None, interval_min: int = 
     )
 
 
-def _make_parse_text_action(**overrides) -> PendingAction:
+def _make_parse_text_action(**overrides: Any) -> PendingAction:
     data = dict(
         action_type='parse_text',
         created_at=_NOW.isoformat(),
@@ -62,10 +63,10 @@ def _make_parse_text_action(**overrides) -> PendingAction:
         source_chat_id=100,
     )
     data.update(overrides)
-    return PendingAction(**data)
+    return PendingAction(**data)  # type: ignore[arg-type]
 
 
-def _make_create_event_action(**overrides) -> PendingAction:
+def _make_create_event_action(**overrides: Any) -> PendingAction:
     data = dict(
         action_type='create_event',
         created_at=_NOW.isoformat(),
@@ -75,7 +76,7 @@ def _make_create_event_action(**overrides) -> PendingAction:
         source_type='telegram_quick_action',
     )
     data.update(overrides)
-    return PendingAction(**data)
+    return PendingAction(**data)  # type: ignore[arg-type]
 
 
 # ── initialize ────────────────────────────────────────────────────────────────
@@ -123,6 +124,7 @@ async def test_enqueue_parse_text_persists_occurred_at_as_iso() -> None:
     await queue.enqueue_parse_text(text='x', occurred_at=_NOW, source_type='telegram_live')
 
     action = next(iter(repo.store.values()))
+    assert action.occurred_at is not None
     assert datetime.fromisoformat(action.occurred_at) == _NOW
 
 
@@ -320,7 +322,7 @@ async def test_retry_loop_calls_retry_once_after_interval() -> None:
 
     call_count = 0
 
-    async def _patched_retry_once():
+    async def _patched_retry_once() -> tuple[int, int]:
         nonlocal call_count
         call_count += 1
         return (1, 0)

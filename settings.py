@@ -53,8 +53,10 @@ def get_settings() -> Settings:
     environment = environ.get('ENVIRONMENT')
 
     match environment:
-        case 'DEVELOPMENT' | 'TEST' | None:
+        case 'DEVELOPMENT' | None:
             settings_path = root_dir / 'settings.dev.yml'
+        case 'TEST':
+            settings_path = root_dir / 'settings.test.yml'
         case 'PRODUCTION':
             settings_path = root_dir / 'settings.yml'
         case invalid:

@@ -71,14 +71,14 @@ class DiaryApiClient:
         event_id: str,
         *,
         occurred_at: datetime | None = None,
-        type: str | None = None,
+        event_type: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if occurred_at is not None:
             body['occurred_at'] = occurred_at.isoformat()
-        if type is not None:
-            body['type'] = type
+        if event_type is not None:
+            body['type'] = event_type
         if payload is not None:
             body['payload'] = payload
         async with httpx.AsyncClient(timeout=self._timeout) as client:

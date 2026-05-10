@@ -4,6 +4,16 @@ ignore-paths=^\.venv
 [FORMAT]
 max-line-length=120
 
+[BASIC]
+class-const-naming-style=any
+
+[DESIGN]
+max-args=7
+max-positional-arguments=7
+
+[EXCEPTIONS]
+overgeneral-exceptions=builtins.BaseException
+
 [MESSAGES CONTROL]
 disable=
     missing-module-docstring,
@@ -11,3 +21,5 @@ disable=
     missing-function-docstring,
     use-dict-literal,
     import-outside-toplevel,
+    too-few-public-methods,
+    duplicate-code,

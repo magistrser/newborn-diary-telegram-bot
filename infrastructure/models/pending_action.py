@@ -1,7 +1,8 @@
+from typing import Any
+
 from sqlalchemy import BigInteger, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from typing import Any
 
 from infrastructure.models.base import Base
 

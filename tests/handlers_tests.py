@@ -24,6 +24,9 @@ def _make_message(text: str = '', message_id: int = 1, chat_id: int = 100) -> Ma
     return msg
 
 
+_PROMPT_MSG_ID = 9002
+
+
 def _make_callback(data: str, message_id: int = _SUMMARY_MSG_ID) -> MagicMock:
     query = AsyncMock()
     query.data = data
@@ -32,7 +35,10 @@ def _make_callback(data: str, message_id: int = _SUMMARY_MSG_ID) -> MagicMock:
     msg.message_id = message_id
     msg.edit_text = AsyncMock()
     msg.edit_reply_markup = AsyncMock()
-    msg.answer = AsyncMock()
+    msg.delete = AsyncMock()
+    prompt_msg = AsyncMock()
+    prompt_msg.message_id = _PROMPT_MSG_ID
+    msg.answer = AsyncMock(return_value=prompt_msg)
     query.message = msg
     return query
 
@@ -155,9 +161,60 @@ async def test_cb_ev_tm_sets_state() -> None:
     state.update_data.assert_called()
 
 
+async def test_cb_ev_tm_stores_prompt_message_id() -> None:
+    from infrastructure.telegram.handlers import cb_ev_tm
+
+    events = [
+        {'id': _SAMPLE_UUID, 'type': 'sleep_start', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': {}},
+    ]
+    state = _make_fsm({str(_SUMMARY_MSG_ID): events})
+    query = _make_callback(f'ev_tm:{_SAMPLE_UUID}')
+
+    await cb_ev_tm(query, state)
+
+    all_calls = state.update_data.call_args_list
+    stored: dict = {}
+    for call in all_calls:
+        if call.kwargs:
+            stored.update(call.kwargs)
+        if call.args and isinstance(call.args[0], dict):
+            stored.update(call.args[0])
+    assert stored.get('edit_prompt_message_id') == _PROMPT_MSG_ID
+
+
 # ── handle_new_time ───────────────────────────────────────────────────────────
 
 async def test_handle_new_time_valid_updates_event() -> None:
+    from infrastructure.telegram.handlers import handle_new_time
+
+    events = [
+        {'id': _SAMPLE_UUID, 'type': 'sleep_start', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': {}},
+    ]
+    state = _make_fsm({
+        str(_SUMMARY_MSG_ID): events,
+        'edit_event_id': _SAMPLE_UUID,
+        'edit_summary_message_id': _SUMMARY_MSG_ID,
+        'edit_original_date_iso': '2026-05-10T10:00:00+03:00',
+        'edit_prompt_message_id': _PROMPT_MSG_ID,
+    })
+    msg = _make_message('21:55', message_id=200, chat_id=100)
+    api = _make_api_client()
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api):
+        await handle_new_time(msg, state)
+
+    api.update_event.assert_called_once()
+    call_kwargs = api.update_event.call_args.kwargs
+    assert call_kwargs.get('occurred_at') is not None
+    occurred = call_kwargs['occurred_at']
+    assert occurred.hour == 21
+    assert occurred.minute == 55
+    state.clear.assert_called_once()
+    msg.bot.delete_message.assert_called_once_with(chat_id=100, message_id=_PROMPT_MSG_ID)
+    msg.delete.assert_called_once()
+
+
+async def test_handle_new_time_deletes_user_message_without_prompt() -> None:
     from infrastructure.telegram.handlers import handle_new_time
 
     events = [
@@ -175,13 +232,8 @@ async def test_handle_new_time_valid_updates_event() -> None:
     with patch('infrastructure.telegram.handlers._get_client', return_value=api):
         await handle_new_time(msg, state)
 
-    api.update_event.assert_called_once()
-    call_kwargs = api.update_event.call_args.kwargs
-    assert call_kwargs.get('occurred_at') is not None
-    occurred = call_kwargs['occurred_at']
-    assert occurred.hour == 21
-    assert occurred.minute == 55
-    state.clear.assert_called_once()
+    msg.bot.delete_message.assert_not_called()
+    msg.delete.assert_called_once()
 
 
 async def test_handle_new_time_invalid_reprompts() -> None:
@@ -286,7 +338,7 @@ async def test_cb_ev_back_restores_keyboard_without_api_call() -> None:
 
 # ── ev_done ───────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_done_removes_keyboard() -> None:
+async def test_cb_ev_done_deletes_message() -> None:
     from infrastructure.telegram.handlers import cb_ev_done
 
     state = _make_fsm({str(_SUMMARY_MSG_ID): []})
@@ -294,9 +346,8 @@ async def test_cb_ev_done_removes_keyboard() -> None:
 
     await cb_ev_done(query, state)
 
-    query.message.edit_reply_markup.assert_called_once()
-    kb = query.message.edit_reply_markup.call_args.kwargs.get('reply_markup')
-    assert kb is None
+    query.message.delete.assert_called_once()
+    query.message.edit_reply_markup.assert_not_called()
 
 
 # ── question prefix ───────────────────────────────────────────────────────────

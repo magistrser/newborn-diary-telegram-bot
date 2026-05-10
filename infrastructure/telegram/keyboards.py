@@ -1,6 +1,10 @@
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+_MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 
 # (callback_id, label, event_type, payload)
 # event_type=None → special action (not an API event)
@@ -56,7 +60,11 @@ def event_summary_keyboard(events: list[dict[str, Any]]) -> InlineKeyboardMarkup
     rows: list[list[InlineKeyboardButton]] = []
     for e in events:
         eid = e['id']
-        occ = e.get('occurred_at', '')[:16].replace('T', ' ')[11:]  # HH:MM
+        _occ_raw = e.get('occurred_at', '')
+        try:
+            occ = datetime.fromisoformat(_occ_raw).astimezone(_MOSCOW_TZ).strftime('%H:%M')
+        except (ValueError, OverflowError):
+            occ = _occ_raw[11:16]
         rows.append([
             InlineKeyboardButton(text=f'🕒 {occ}', callback_data=f'ev_tm:{eid}'),
             InlineKeyboardButton(text='🔀', callback_data=f'ev_tp:{eid}'),

@@ -9,13 +9,10 @@ from .main import DURATION_SECONDS, ERRORS
 def _get_labels(func: Callable, target: str | Callable | None, operation: str | None) -> tuple[str, str]:
     if isinstance(target, str):
         return target, operation or func.__qualname__.split('.')[-1]
-    else:
-        names = func.__qualname__.split('.')
-
-        if len(names) > 1:
-            return names[-2], operation or names[-1]
-        else:
-            return 'global', operation or names[-1]
+    names = func.__qualname__.split('.')
+    if len(names) > 1:
+        return names[-2], operation or names[-1]
+    return 'global', operation or names[-1]
 
 
 def duration_tracking(target: str | Callable | None = None, operation: str | None = None) -> Callable:

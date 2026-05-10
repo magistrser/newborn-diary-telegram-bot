@@ -187,18 +187,21 @@ class ActionRetryQueue:
 
 # ── module-level singleton ────────────────────────────────────────────────────
 
-_queue: ActionRetryQueue | None = None
+class _QueueHolder:
+    queue: ActionRetryQueue | None = None
+
+
+_holder = _QueueHolder()
 
 
 def set_retry_queue(queue: ActionRetryQueue) -> None:
-    global _queue
-    _queue = queue
+    _holder.queue = queue
 
 
 def get_retry_queue() -> ActionRetryQueue:
-    if _queue is None:
+    if _holder.queue is None:
         raise RuntimeError('ActionRetryQueue has not been initialised — call set_retry_queue() first')
-    return _queue
+    return _holder.queue
 
 
 # ── execution helper ──────────────────────────────────────────────────────────

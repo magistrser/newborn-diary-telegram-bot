@@ -11,8 +11,10 @@ from infrastructure.telegram.runner import start_polling, stop_polling
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[dict]:
     await start_polling()
-    yield {}
-    await stop_polling()
+    try:
+        yield {}
+    finally:
+        await stop_polling()
 
 
 app = FastAPI(lifespan=lifespan)
