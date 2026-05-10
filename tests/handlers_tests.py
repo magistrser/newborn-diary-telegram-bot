@@ -297,3 +297,23 @@ async def test_cb_ev_done_removes_keyboard() -> None:
     query.message.edit_reply_markup.assert_called_once()
     kb = query.message.edit_reply_markup.call_args.kwargs.get('reply_markup')
     assert kb is None
+
+
+# ── question prefix ───────────────────────────────────────────────────────────
+
+async def test_handle_text_question_prefix_routes_to_ask() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('? Сколько спал вчера?')
+    state = _make_fsm()
+    api = _make_api_client()
+    api.ask = AsyncMock(return_value={'answer': '8 часов'})
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        await handle_text(msg, state)
+
+    api.ask.assert_called_once()
+    api.parse_text.assert_not_called()
