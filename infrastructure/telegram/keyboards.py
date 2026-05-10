@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 # (callback_id, label, event_type, payload)
 # event_type=None → special action (not an API event)
-QUICK_ACTIONS = [
+QUICK_ACTIONS: list[tuple[str, str, str | None, dict[str, Any] | None]] = [
     # ── Feeding ───────────────────────────────────────────────────────────────
     ('feed_left',          '🍼 Левая',         'feed_breast',  {'side': 'left'}),
     ('feed_right',         '🍼 Правая',        'feed_breast',  {'side': 'right'}),
@@ -32,10 +32,10 @@ QUICK_ACTIONS = [
 ]
 
 # Maps callback_data → (event_type, payload)  (excludes special actions)
-ACTION_MAP = {
+ACTION_MAP: dict[str, tuple[str, dict[str, Any]]] = {
     action_id: (etype, payload)
     for action_id, _, etype, payload in QUICK_ACTIONS
-    if etype is not None
+    if etype is not None and payload is not None
 }
 
 # Sub-keyboard sections: (section_label, [action_ids])

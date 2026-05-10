@@ -11,7 +11,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from application.services.diary_api_client import DiaryApiClient
 from infrastructure.telegram.keyboards import (
@@ -242,9 +242,11 @@ async def _update_summary_events(state: FSMContext, message_id: int, events: lis
 @router.callback_query(F.data.startswith('ev_del:'))
 async def cb_ev_del(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
+    if query.data is None:
+        return
     event_id = query.data.split(':', 1)[1]
     msg = query.message
-    if msg is None:
+    if msg is None or isinstance(msg, InaccessibleMessage):
         return
     try:
         await _get_client().delete_event(event_id)
@@ -266,6 +268,8 @@ async def cb_ev_del(query: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith('ev_tm:'))
 async def cb_ev_tm(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
+    if query.data is None:
+        return
     event_id = query.data.split(':', 1)[1]
     msg = query.message
     if msg is None:
@@ -343,9 +347,11 @@ async def handle_new_time(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith('ev_tp:'))
 async def cb_ev_tp(query: CallbackQuery) -> None:
     await query.answer()
+    if query.data is None:
+        return
     event_id = query.data.split(':', 1)[1]
     msg = query.message
-    if msg is None:
+    if msg is None or isinstance(msg, InaccessibleMessage):
         return
     await msg.edit_reply_markup(reply_markup=type_change_keyboard(event_id))
 
@@ -353,12 +359,14 @@ async def cb_ev_tp(query: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith('ev_sub:'))
 async def cb_ev_sub(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
+    if query.data is None:
+        return
     parts = query.data.split(':', 2)
     if len(parts) != 3:
         return
     _, event_id, action_id = parts
     msg = query.message
-    if msg is None:
+    if msg is None or isinstance(msg, InaccessibleMessage):
         return
 
     if action_id not in ACTION_MAP:
@@ -399,7 +407,7 @@ async def cb_ev_sub(query: CallbackQuery, state: FSMContext) -> None:
 async def cb_ev_back(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
     msg = query.message
-    if msg is None:
+    if msg is None or isinstance(msg, InaccessibleMessage):
         return
     events = await _get_summary_events(state, msg.message_id)
     await msg.edit_reply_markup(reply_markup=event_summary_keyboard(events))
@@ -409,7 +417,7 @@ async def cb_ev_back(query: CallbackQuery, state: FSMContext) -> None:
 async def cb_ev_done(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer('Готово')
     msg = query.message
-    if msg is None:
+    if msg is None or isinstance(msg, InaccessibleMessage):
         return
     # Drop cached events for this summary
     data = await state.get_data()

@@ -32,7 +32,7 @@ def _mock_async_client(response: MagicMock) -> MagicMock:
     return mock_client
 
 
-async def test_get_event_issues_correct_get():
+async def test_get_event_issues_correct_get() -> None:
     event_data = {'id': 'abc-123', 'type': 'sleep_start', 'payload': {}}
     mock_resp = _mock_response(event_data)
     mock_client = _mock_async_client(mock_resp)
@@ -44,7 +44,7 @@ async def test_get_event_issues_correct_get():
     assert result == event_data
 
 
-async def test_update_event_sends_only_provided_fields():
+async def test_update_event_sends_only_provided_fields() -> None:
     mock_resp = _mock_response({'id': 'abc-123'})
     mock_client = _mock_async_client(mock_resp)
 
@@ -59,7 +59,7 @@ async def test_update_event_sends_only_provided_fields():
     assert 'payload' not in body
 
 
-async def test_update_event_sends_type_and_payload():
+async def test_update_event_sends_type_and_payload() -> None:
     mock_resp = _mock_response({'id': 'abc-123'})
     mock_client = _mock_async_client(mock_resp)
 
@@ -77,7 +77,7 @@ async def test_update_event_sends_type_and_payload():
     assert 'occurred_at' not in body
 
 
-async def test_delete_event_issues_delete():
+async def test_delete_event_issues_delete() -> None:
     mock_resp = _mock_response(status=204)
     mock_client = _mock_async_client(mock_resp)
 

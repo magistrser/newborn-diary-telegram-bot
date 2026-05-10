@@ -39,7 +39,7 @@ async def stop_polling() -> None:
         _polling_task.cancel()
         try:
             await _polling_task
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, RuntimeError):
             pass
     if _bot:
         await _bot.session.close()

@@ -1,5 +1,6 @@
 """Handler unit tests using mocked aiogram objects and DiaryApiClient."""
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -43,12 +44,12 @@ def _make_fsm(initial_data: dict | None = None) -> AsyncMock:
     _data = dict(initial_data or {})
     state.get_data = AsyncMock(side_effect=lambda: dict(_data))
 
-    async def _update_data(new: dict | None = None, **kwargs):
+    async def _update_data(new: dict[str, Any] | None = None, **kwargs: Any) -> None:
         if new:
             _data.update(new)
         _data.update(kwargs)
 
-    async def _set_data(new: dict):
+    async def _set_data(new: dict[str, Any]) -> None:
         _data.clear()
         _data.update(new)
 
@@ -59,7 +60,7 @@ def _make_fsm(initial_data: dict | None = None) -> AsyncMock:
     return state
 
 
-def _make_api_client(**overrides) -> AsyncMock:
+def _make_api_client(**overrides: Any) -> AsyncMock:
     client = AsyncMock()
     client.parse_text = AsyncMock(return_value={'events': [
         {'id': _SAMPLE_UUID, 'type': 'sleep_start', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': {}},
@@ -79,7 +80,7 @@ def _make_api_client(**overrides) -> AsyncMock:
 
 # ── handle_text ───────────────────────────────────────────────────────────────
 
-async def test_handle_text_replies_with_keyboard():
+async def test_handle_text_replies_with_keyboard() -> None:
     from infrastructure.telegram.handlers import handle_text
 
     msg = _make_message('Заснул')
@@ -102,7 +103,7 @@ async def test_handle_text_replies_with_keyboard():
 
 # ── cb_quick_action (regression) ──────────────────────────────────────────────
 
-async def test_cb_quick_action_no_edit_keyboard():
+async def test_cb_quick_action_no_edit_keyboard() -> None:
     from infrastructure.telegram.handlers import cb_quick_action
 
     query = _make_callback('sleep_start')
@@ -118,7 +119,7 @@ async def test_cb_quick_action_no_edit_keyboard():
 
 # ── ev_del ────────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_del_removes_event_rerenders():
+async def test_cb_ev_del_removes_event_rerenders() -> None:
     from infrastructure.telegram.handlers import cb_ev_del
 
     events = [
@@ -140,7 +141,7 @@ async def test_cb_ev_del_removes_event_rerenders():
 
 # ── ev_tm ─────────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_tm_sets_state():
+async def test_cb_ev_tm_sets_state() -> None:
     from infrastructure.telegram.handlers import cb_ev_tm
 
     events = [
@@ -158,7 +159,7 @@ async def test_cb_ev_tm_sets_state():
 
 # ── handle_new_time ───────────────────────────────────────────────────────────
 
-async def test_handle_new_time_valid_updates_event():
+async def test_handle_new_time_valid_updates_event() -> None:
     from infrastructure.telegram.handlers import handle_new_time
 
     events = [
@@ -185,7 +186,7 @@ async def test_handle_new_time_valid_updates_event():
     state.clear.assert_called_once()
 
 
-async def test_handle_new_time_invalid_reprompts():
+async def test_handle_new_time_invalid_reprompts() -> None:
     from infrastructure.telegram.handlers import handle_new_time
 
     state = _make_fsm({'edit_event_id': _SAMPLE_UUID})
@@ -202,7 +203,7 @@ async def test_handle_new_time_invalid_reprompts():
 
 # ── ev_tp ─────────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_tp_swaps_keyboard():
+async def test_cb_ev_tp_swaps_keyboard() -> None:
     from infrastructure.telegram.handlers import cb_ev_tp
 
     query = _make_callback(f'ev_tp:{_SAMPLE_UUID}')
@@ -215,7 +216,7 @@ async def test_cb_ev_tp_swaps_keyboard():
 
 # ── ev_sub ────────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_sub_preserves_duration_min():
+async def test_cb_ev_sub_preserves_duration_min() -> None:
     from infrastructure.telegram.handlers import cb_ev_sub
 
     old_payload = {'duration_min': 30}
@@ -238,7 +239,7 @@ async def test_cb_ev_sub_preserves_duration_min():
     assert kwargs['type'] == 'bath'
 
 
-async def test_cb_ev_sub_no_compatible_fields():
+async def test_cb_ev_sub_no_compatible_fields() -> None:
     from infrastructure.telegram.handlers import cb_ev_sub
 
     old_payload = {'grams': 4200}
@@ -263,7 +264,7 @@ async def test_cb_ev_sub_no_compatible_fields():
 
 # ── ev_back ───────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_back_restores_keyboard_without_api_call():
+async def test_cb_ev_back_restores_keyboard_without_api_call() -> None:
     from infrastructure.telegram.handlers import cb_ev_back
 
     events = [
@@ -283,7 +284,7 @@ async def test_cb_ev_back_restores_keyboard_without_api_call():
 
 # ── ev_done ───────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_done_removes_keyboard():
+async def test_cb_ev_done_removes_keyboard() -> None:
     from infrastructure.telegram.handlers import cb_ev_done
 
     state = _make_fsm({str(_SUMMARY_MSG_ID): []})
