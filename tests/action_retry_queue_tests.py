@@ -376,13 +376,13 @@ async def test_set_and_get_retry_queue() -> None:
 
 async def test_get_retry_queue_raises_before_set() -> None:
     import application.services.action_retry_queue as mod
-    original = mod._queue
-    mod._queue = None
+    original = mod._holder.queue
+    mod._holder.queue = None
     try:
         with pytest.raises(RuntimeError, match='not been initialised'):
             get_retry_queue()
     finally:
-        mod._queue = original
+        mod._holder.queue = original
 
 
 # ── _execute helper ───────────────────────────────────────────────────────────

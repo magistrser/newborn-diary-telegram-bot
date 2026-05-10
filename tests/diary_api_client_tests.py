@@ -63,7 +63,7 @@ async def test_update_event_sends_type_and_payload() -> None:
     with patch('httpx.AsyncClient', return_value=mock_client):
         await _make_client().update_event(
             'abc-123',
-            type='feed_breast',
+            event_type='feed_breast',
             payload={'side': 'left'},
         )
 
