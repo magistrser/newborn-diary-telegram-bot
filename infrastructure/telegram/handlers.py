@@ -2,6 +2,7 @@
 Telegram message, command, and callback handlers.
 All handlers are registered on a single Router defined here.
 """
+import html
 import logging
 import re
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
+from application.services.action_retry_queue import get_retry_queue
 from application.services.diary_api_client import DiaryApiClient
 from infrastructure.telegram.keyboards import (
     ACTION_MAP,
@@ -50,6 +52,10 @@ def _is_allowed(chat_id: int, author: str | None) -> bool:
 
 def _get_client() -> DiaryApiClient:
     return DiaryApiClient(settings.diary_api)
+
+
+def _get_retry_queue():  # type: ignore[return]
+    return get_retry_queue()
 
 
 def _format_events(data: dict) -> str:
@@ -148,7 +154,7 @@ async def handle_question_in_state(message: Message, state: FSMContext) -> None:
 async def _handle_question(message: Message, question: str) -> None:
     try:
         result = await _get_client().ask(question)
-        await message.answer(result.get('answer', '(нет ответа)'))
+        await message.answer(html.escape(result.get('answer', '(нет ответа)')))
     except Exception as exc:
         logger.error('ask failed: %s', exc)
         await message.answer('⚠️ Ошибка при обращении к дневнику. Попробуйте позже.')
@@ -189,7 +195,14 @@ async def handle_text(message: Message, state: FSMContext) -> None:
             await state.update_data({str(sent.message_id): events})
     except Exception as exc:
         logger.error('parse_text failed: %s', exc)
-        await message.reply('⚠️ Не удалось сохранить сообщение. Попробуйте позже.')
+        await _get_retry_queue().enqueue_parse_text(
+            text=text,
+            occurred_at=occurred_at,
+            source_type='telegram_live',
+            source_message_id=msg_id,
+            source_chat_id=chat_id,
+        )
+        await message.reply('⚠️ Не удалось сохранить сообщение — повторю попытку автоматически.')
 
 
 # ── Inline keyboard callbacks ─────────────────────────────────────────────────
@@ -225,7 +238,13 @@ async def cb_quick_action(query: CallbackQuery) -> None:
             await query.message.answer(f'✅ {occ} — {action_id.replace("_", " ")}')
     except Exception as exc:
         logger.error('quick_action failed: %s', exc)
-        await query.answer('⚠️ Ошибка')
+        await _get_retry_queue().enqueue_create_event(
+            event_type=event_type,
+            occurred_at=occurred_at,
+            payload=payload,
+            source_type='telegram_quick_action',
+        )
+        await query.answer('⚠️ Ошибка — повторю попытку автоматически')
 
 
 # ── Event inline edit callbacks ───────────────────────────────────────────────

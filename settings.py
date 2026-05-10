@@ -2,6 +2,7 @@ from os import environ
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from yaml import safe_load
 
 
@@ -16,9 +17,35 @@ class DiaryApiSettings(BaseModel):
     request_timeout_sec: int = Field(default=660)
 
 
+class PostgresSettings(BaseModel):
+    host: str = Field(...)
+    port: int = Field(...)
+    db_name: str = Field(...)
+    user: str = Field(...)
+    password: str = Field(...)
+    pool_size: int = Field(default=5)
+
+    def get_async_url(self) -> str:
+        return f'postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.db_name}'
+
+    def create_engine(self) -> AsyncEngine:
+        return create_async_engine(
+            url=self.get_async_url(),
+            pool_pre_ping=True,
+            pool_size=self.pool_size,
+            echo=False,
+        )
+
+
+class RetrySettings(BaseModel):
+    interval_min: int = Field(default=10)
+
+
 class Settings(BaseModel):
     telegram: TelegramSettings = Field(...)
     diary_api: DiaryApiSettings = Field(...)
+    postgres: PostgresSettings = Field(...)
+    retry: RetrySettings = Field(default_factory=RetrySettings)
 
 
 def get_settings() -> Settings:
