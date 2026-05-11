@@ -238,6 +238,8 @@ Handles transient failures when `newborn_diary` is temporarily unreachable.
   previously queued actions so they survive adapter restarts.
 - A background `asyncio.Task` wakes every `retry_interval_min` minutes and calls `retry_once()`.
 - `retry_once()` attempts every pending action once; succeeded items are removed from memory and DB.
+  The Telegram runner then sends a best-effort success notification to the original chat when the
+  pending action has enough source chat metadata.
 - Two action types: `parse_text` and `create_event`.
 - `attempt_count` is incremented on each retry and persisted; no automatic give-up (manual
   intervention needed for permanently broken actions).

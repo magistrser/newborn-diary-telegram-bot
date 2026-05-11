@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from application.services.action_retry_queue import ActionRetryQueue
+from application.services.action_retry_queue import ActionRetryQueue, RetrySuccessCallback
 from infrastructure.diary_api_client import DiaryApiClient
 from infrastructure.logging import configure_logging
 from infrastructure.repositories.pending_action_repository import SqlPendingActionsRepository
@@ -99,10 +99,12 @@ class TelegramAdapterApplicationFactory:
     def action_retry_queue(
         engine: AsyncEngine,
         session_factory: async_sessionmaker[AsyncSession],
+        on_success: RetrySuccessCallback | None = None,
     ) -> ActionRetryQueue:
         repo = SqlPendingActionsRepository(engine, session_factory)
         return ActionRetryQueue(
             repo=repo,
             diary_api=TelegramAdapterApplicationFactory.diary_api_client(),
             retry_interval_min=settings.retry.interval_min,
+            on_success=on_success,
         )
