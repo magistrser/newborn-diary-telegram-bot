@@ -70,6 +70,7 @@ class ActionRetryQueue:
         source_type: str,
         source_message_id: str | None = None,
         source_chat_id: int | None = None,
+        source_user_id: int | None = None,
     ) -> str:
         action = PendingAction(
             action_type='parse_text',
@@ -79,6 +80,7 @@ class ActionRetryQueue:
             source_type=source_type,
             source_message_id=source_message_id,
             source_chat_id=source_chat_id,
+            source_user_id=source_user_id,
         )
         self._actions[action.id] = action
         await self._repo.upsert(action)
@@ -94,6 +96,7 @@ class ActionRetryQueue:
         source_type: str,
         source_message_id: str | None = None,
         source_chat_id: int | None = None,
+        source_user_id: int | None = None,
     ) -> str:
         action = PendingAction(
             action_type='create_event',
@@ -104,6 +107,7 @@ class ActionRetryQueue:
             source_type=source_type,
             source_message_id=source_message_id,
             source_chat_id=source_chat_id,
+            source_user_id=source_user_id,
         )
         self._actions[action.id] = action
         await self._repo.upsert(action)

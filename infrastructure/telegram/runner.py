@@ -45,6 +45,7 @@ class _RunnerState:
     bot: Bot | None = None
     polling_task: asyncio.Task[None] | None = None
     engine: AsyncEngine | None = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None
     retry_queue: ActionRetryQueue | None = None
     stopping: bool = False
 
@@ -60,7 +61,12 @@ async def _notify_retry_success(action: PendingAction, result: dict[str, Any]) -
         )
         return
 
-    await notify_retry_success(_state.bot, action, result)
+    storage = (
+        SqlFsmStorage(_state.engine, _state.session_factory)
+        if _state.engine is not None and _state.session_factory is not None
+        else None
+    )
+    await notify_retry_success(_state.bot, storage, action, result)
 
 
 async def _close_bot_session(bot: Bot) -> None:
@@ -140,6 +146,7 @@ async def start_polling() -> None:
     _state.engine = engine
     logger.debug('SQLAlchemy engine created [pool_size=%d]', settings.postgres.pool_size)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    _state.session_factory = session_factory
 
     _state.retry_queue = TelegramAdapterApplicationFactory.action_retry_queue(
         engine,
@@ -181,6 +188,7 @@ async def stop_polling() -> None:
         await _state.engine.dispose()
         _state.engine = None
         logger.debug('SQLAlchemy engine disposed')
+    _state.session_factory = None
     _state.bot = None
     _state.retry_queue = None
     logger.info('Telegram polling stopped')

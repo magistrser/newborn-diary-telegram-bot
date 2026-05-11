@@ -70,6 +70,7 @@ def _make_parse_text_action(**overrides: Any) -> PendingAction:
         source_type='telegram_live',
         source_message_id='42',
         source_chat_id=100,
+        source_user_id=200,
     )
     data.update(overrides)
     return PendingAction(**data)  # type: ignore[arg-type]
@@ -83,6 +84,7 @@ def _make_create_event_action(**overrides: Any) -> PendingAction:
         occurred_at=_NOW.isoformat(),
         payload={},
         source_type='telegram_quick_action',
+        source_user_id=200,
     )
     data.update(overrides)
     return PendingAction(**data)  # type: ignore[arg-type]
@@ -116,6 +118,7 @@ async def test_enqueue_parse_text_adds_to_in_memory_and_repo() -> None:
         source_type='telegram_live',
         source_message_id='7',
         source_chat_id=99,
+        source_user_id=200,
     )
 
     assert queue.pending_count == 1
@@ -125,6 +128,7 @@ async def test_enqueue_parse_text_adds_to_in_memory_and_repo() -> None:
     assert stored.text == 'Поел'
     assert stored.source_message_id == '7'
     assert stored.source_chat_id == 99
+    assert stored.source_user_id == 200
 
 
 async def test_enqueue_parse_text_persists_occurred_at_as_iso() -> None:
@@ -150,6 +154,7 @@ async def test_enqueue_create_event_adds_to_in_memory_and_repo() -> None:
         source_type='telegram_quick_action',
         source_message_id='77',
         source_chat_id=100,
+        source_user_id=200,
     )
 
     assert queue.pending_count == 1
@@ -158,6 +163,7 @@ async def test_enqueue_create_event_adds_to_in_memory_and_repo() -> None:
     assert stored.payload == {'kind': 'pee'}
     assert stored.source_message_id == '77'
     assert stored.source_chat_id == 100
+    assert stored.source_user_id == 200
 
 
 # ── retry_once — success ──────────────────────────────────────────────────────
@@ -499,6 +505,7 @@ async def test_sql_repo_setup_creates_table() -> None:
     await repo.setup()
 
     conn.run_sync.assert_called_once()
+    conn.execute.assert_called_once()
 
 
 async def test_sql_repo_upsert_executes_statement() -> None:
@@ -545,6 +552,7 @@ async def test_sql_repo_load_all_returns_domain_objects() -> None:
         source_type=action.source_type,
         source_message_id=action.source_message_id,
         source_chat_id=action.source_chat_id,
+        source_user_id=action.source_user_id,
         event_type=action.event_type,
         payload=action.payload,
     )
@@ -561,6 +569,7 @@ async def test_sql_repo_load_all_returns_domain_objects() -> None:
     assert len(result) == 1
     assert result[0].id == action.id
     assert result[0].text == action.text
+    assert result[0].source_user_id == action.source_user_id
 
 
 # ── handler integration ───────────────────────────────────────────────────────
@@ -573,6 +582,7 @@ def _make_message(text: str = '', message_id: int = 1, chat_id: int = 100) -> Ma
     msg.chat.id = chat_id
     msg.from_user = MagicMock()
     msg.from_user.full_name = 'Mila'
+    msg.from_user.id = 200
     msg.date = datetime(2026, 5, 10, 10, 0, tzinfo=timezone.utc)
     msg.reply = AsyncMock(return_value=AsyncMock(message_id=9001))
     msg.answer = AsyncMock()
@@ -595,8 +605,16 @@ def _make_fsm() -> AsyncMock:
 async def test_notify_retry_success_sends_parse_text_result_to_source_chat() -> None:
     from infrastructure.telegram.handlers import notify_retry_success
 
-    action = _make_parse_text_action(source_message_id='42', source_chat_id=100)
+    action = _make_parse_text_action(source_message_id='42', source_chat_id=100, source_user_id=200)
     bot = AsyncMock()
+    bot.id = 1
+    sent = MagicMock()
+    sent.message_id = 9001
+    bot.send_message = AsyncMock(return_value=sent)
+    bot.edit_message_reply_markup = AsyncMock()
+    storage = AsyncMock()
+    storage.get_data = AsyncMock(return_value={})
+    storage.set_data = AsyncMock()
     result = {
         'events': [{
             'id': 'event-1',
@@ -606,7 +624,7 @@ async def test_notify_retry_success_sends_parse_text_result_to_source_chat() -> 
         }],
     }
 
-    await notify_retry_success(bot, action, result)
+    await notify_retry_success(bot, storage, action, result)
 
     bot.send_message.assert_awaited_once()
     kwargs = bot.send_message.call_args.kwargs
@@ -614,6 +632,13 @@ async def test_notify_retry_success_sends_parse_text_result_to_source_chat() -> 
     assert 'Повторная попытка успешна' in kwargs['text']
     assert 'Сохранил' in kwargs['text']
     assert kwargs['reply_parameters'].message_id == 42
+    storage.get_data.assert_awaited_once()
+    key = storage.get_data.call_args.args[0]
+    assert key.bot_id == 1
+    assert key.chat_id == 100
+    assert key.user_id == 200
+    storage.set_data.assert_awaited_once_with(key, {'9001': result['events']})
+    bot.edit_message_reply_markup.assert_awaited_once()
 
 
 async def test_handle_text_enqueues_on_parse_text_failure() -> None:
@@ -638,6 +663,7 @@ async def test_handle_text_enqueues_on_parse_text_failure() -> None:
     kwargs = retry_queue.enqueue_parse_text.call_args.kwargs
     assert kwargs['text'] == 'Заснул'
     assert kwargs['source_type'] == 'telegram_live'
+    assert kwargs['source_user_id'] == 200
     msg.reply.assert_called_once()
     assert 'повторю' in msg.reply.call_args.args[0].lower()
 
@@ -651,6 +677,7 @@ async def test_cb_quick_action_enqueues_on_create_event_failure() -> None:
     query.message = AsyncMock()
     query.message.chat.id = 100
     query.message.message_id = 77
+    query.from_user.id = 200
 
     api = AsyncMock()
     api.create_event = AsyncMock(side_effect=Exception('server down'))
@@ -668,6 +695,7 @@ async def test_cb_quick_action_enqueues_on_create_event_failure() -> None:
     assert kwargs['source_type'] == 'telegram_quick_action'
     assert kwargs['source_chat_id'] == 100
     assert kwargs['source_message_id'] == '77'
+    assert kwargs['source_user_id'] == 200
     query.answer.assert_called()
     assert 'повторю' in query.answer.call_args.args[0].lower()
 
