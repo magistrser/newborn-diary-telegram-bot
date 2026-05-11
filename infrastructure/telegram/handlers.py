@@ -280,9 +280,24 @@ async def cmd_ask(message: Message, state: FSMContext) -> None:
 
 @router.message(AskState.waiting_for_question)
 async def handle_question_in_state(message: Message, state: FSMContext) -> None:
+    logger.info(
+        'Handling message while waiting for question [chat_id=%s message_id=%s thread_id=%s '
+        'is_event_topic=%s is_question_topic=%s]',
+        message.chat.id,
+        message.message_id,
+        _message_thread_id(message),
+        _is_event_topic(message),
+        _is_question_topic(message),
+    )
     if not _is_question_topic(message):
         if _is_event_topic(message):
             await _handle_event_text(message, state)
+        else:
+            logger.info(
+                'Ignoring waiting-for-question message outside configured topics '
+                '[chat_id=%s message_id=%s thread_id=%s]',
+                message.chat.id, message.message_id, _message_thread_id(message),
+            )
         return
 
     await state.clear()
@@ -311,6 +326,19 @@ async def _handle_question(message: Message, question: str) -> None:
 async def handle_text(message: Message, state: FSMContext) -> None:
     chat_id = message.chat.id
     author = message.from_user.full_name if message.from_user else None
+    text = message.text or ''
+
+    logger.info(
+        'Handling Telegram text [chat_id=%s author=%r message_id=%s thread_id=%s text_len=%d '
+        'is_event_topic=%s is_question_topic=%s]',
+        chat_id,
+        author,
+        message.message_id,
+        _message_thread_id(message),
+        len(text),
+        _is_event_topic(message),
+        _is_question_topic(message),
+    )
 
     if not _is_allowed(chat_id, author):
         logger.info(
@@ -318,8 +346,6 @@ async def handle_text(message: Message, state: FSMContext) -> None:
             chat_id, author, message.message_id, _message_thread_id(message),
         )
         return
-
-    text = message.text or ''
 
     if _has_configured_question_topic() and _is_question_topic(message):
         await _handle_question(message, _question_text(text))
@@ -353,6 +379,15 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
     msg_id = str(message.message_id)
 
     try:
+        logger.info(
+            'Sending Telegram message to diary API for parsing [chat_id=%s message_id=%s thread_id=%s '
+            'text_len=%d timeout_sec=%d]',
+            chat_id,
+            message.message_id,
+            _message_thread_id(message),
+            len(text),
+            settings.diary_api.request_timeout_sec,
+        )
         result = await _get_client().parse_text(
             text=text,
             occurred_at=occurred_at,
