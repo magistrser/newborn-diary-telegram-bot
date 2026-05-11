@@ -25,6 +25,7 @@ variables:
 
   DOCKER_TLS_CERTDIR: "" # to disable TLS for docker:dind
   DOCKER_HOST: tcp://docker:2375
+  PYTHONPYCACHEPREFIX: /tmp/telegram-adapter-pyc
 
 workflow:
   rules:
