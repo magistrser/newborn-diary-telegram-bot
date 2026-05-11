@@ -19,7 +19,7 @@ _POLLING_RESTART_DELAY_SEC = 5.0
 
 
 async def _ensure_database_exists(pg: PostgresSettings) -> None:
-    logger.info(
+    logger.debug(
         'Checking Postgres database [host=%s port=%d database=%s user=%s]',
         pg.host, pg.port, pg.db_name, pg.user,
     )
@@ -34,7 +34,7 @@ async def _ensure_database_exists(pg: PostgresSettings) -> None:
             await conn.execute(f'CREATE DATABASE "{pg.db_name}"')
             logger.info('Created database %r', pg.db_name)
         else:
-            logger.info('Postgres database exists [database=%s]', pg.db_name)
+            logger.debug('Postgres database exists [database=%s]', pg.db_name)
     finally:
         await conn.close()
 
@@ -71,14 +71,14 @@ async def _run_polling_once(
         'Connected to Telegram bot [id=%s username=@%s name=%r]',
         bot_info.id, bot_info.username, bot_info.full_name,
     )
-    logger.info(
+    logger.debug(
         'Telegram routing config [allowed_chat_ids=%s allowed_authors=%s event_topic_id=%s question_topic_id=%s]',
         settings.telegram.allowed_chat_ids or 'ALL',
         settings.telegram.allowed_authors or 'ALL',
         settings.telegram.event_topic_id,
         settings.telegram.question_topic_id,
     )
-    logger.info('Telegram update logging enabled; incoming messages and callbacks will be logged before filters')
+    logger.debug('Telegram update logging enabled; incoming messages and callbacks will be logged before filters')
     dp = Dispatcher(storage=SqlFsmStorage(engine, session_factory))
     dp.include_router(router)
 
@@ -94,7 +94,7 @@ async def _run_polling_once(
         if _state.bot is bot:
             _state.bot = None
         await _close_bot_session(bot)
-        logger.info('Telegram bot HTTP session closed')
+        logger.debug('Telegram bot HTTP session closed')
 
 
 async def _polling_supervisor(
@@ -125,7 +125,7 @@ async def start_polling() -> None:
     await _ensure_database_exists(settings.postgres)
     engine = settings.postgres.create_engine()
     _state.engine = engine
-    logger.info('SQLAlchemy engine created [pool_size=%d]', settings.postgres.pool_size)
+    logger.debug('SQLAlchemy engine created [pool_size=%d]', settings.postgres.pool_size)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     _state.retry_queue = TelegramAdapterApplicationFactory.action_retry_queue(
@@ -135,7 +135,7 @@ async def start_polling() -> None:
     await _state.retry_queue.initialize()
     _state.retry_queue.start()
     set_retry_queue(_state.retry_queue)
-    logger.info('Action retry queue ready [pending_count=%d]', _state.retry_queue.pending_count)
+    logger.debug('Action retry queue ready [pending_count=%d]', _state.retry_queue.pending_count)
 
     _state.polling_task = asyncio.create_task(
         _polling_supervisor(engine, session_factory),
@@ -166,7 +166,7 @@ async def stop_polling() -> None:
     if _state.engine:
         await _state.engine.dispose()
         _state.engine = None
-        logger.info('SQLAlchemy engine disposed')
+        logger.debug('SQLAlchemy engine disposed')
     _state.bot = None
     _state.retry_queue = None
     logger.info('Telegram polling stopped')

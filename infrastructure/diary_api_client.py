@@ -38,7 +38,7 @@ def _duration_ms(started_at: float) -> float:
 
 
 def _log_success(method: str, path: str, started_at: float, status_code: int) -> None:
-    logger.info(
+    logger.debug(
         'Diary API request completed [method=%s path=%s status=%d duration_ms=%.1f]',
         method, path, status_code, _duration_ms(started_at),
     )

@@ -82,7 +82,7 @@ class TelegramAdapterApplicationFactory:
                     request.method, request.url.path, response.status_code, duration_ms,
                 )
             else:
-                logger.info(
+                logger.debug(
                     'HTTP request completed [method=%s path=%s status=%d duration_ms=%.1f]',
                     request.method, request.url.path, response.status_code, duration_ms,
                 )

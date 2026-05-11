@@ -40,7 +40,7 @@ class TelegramUpdateLoggingMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             author = event.from_user.full_name if event.from_user else None
             user_id = event.from_user.id if event.from_user else None
-            logger.info(
+            logger.debug(
                 'Telegram message received [chat_id=%s chat_type=%s author=%r user_id=%s '
                 'message_id=%s thread_id=%s has_text=%s]',
                 event.chat.id,
@@ -55,7 +55,7 @@ class TelegramUpdateLoggingMiddleware(BaseMiddleware):
             msg = event.message
             chat_id = msg.chat.id if msg and not isinstance(msg, InaccessibleMessage) else None
             message_id = msg.message_id if msg else None
-            logger.info(
+            logger.debug(
                 'Telegram callback received [chat_id=%s from_user_id=%s message_id=%s data=%r]',
                 chat_id,
                 event.from_user.id,
@@ -251,7 +251,7 @@ async def _safe_answer(query: CallbackQuery, text: str = '') -> None:
 @router.message(Command('start'))
 @router.message(Command('menu'))
 async def cmd_menu(message: Message) -> None:
-    logger.info(
+    logger.debug(
         'Sending menu [chat_id=%s message_id=%s thread_id=%s]',
         message.chat.id, message.message_id, _message_thread_id(message),
     )
@@ -261,7 +261,7 @@ async def cmd_menu(message: Message) -> None:
 @router.message(Command('ask'))
 async def cmd_ask(message: Message, state: FSMContext) -> None:
     if not _is_question_topic(message):
-        logger.info(
+        logger.debug(
             'Ignoring /ask outside question topic [chat_id=%s message_id=%s thread_id=%s]',
             message.chat.id, message.message_id, _message_thread_id(message),
         )
@@ -280,7 +280,7 @@ async def cmd_ask(message: Message, state: FSMContext) -> None:
 
 @router.message(AskState.waiting_for_question)
 async def handle_question_in_state(message: Message, state: FSMContext) -> None:
-    logger.info(
+    logger.debug(
         'Handling message while waiting for question [chat_id=%s message_id=%s thread_id=%s '
         'is_event_topic=%s is_question_topic=%s]',
         message.chat.id,
@@ -293,7 +293,7 @@ async def handle_question_in_state(message: Message, state: FSMContext) -> None:
         if _is_event_topic(message):
             await _handle_event_text(message, state)
         else:
-            logger.info(
+            logger.debug(
                 'Ignoring waiting-for-question message outside configured topics '
                 '[chat_id=%s message_id=%s thread_id=%s]',
                 message.chat.id, message.message_id, _message_thread_id(message),
@@ -308,7 +308,7 @@ async def _handle_question(message: Message, question: str) -> None:
     try:
         result = await _get_client().ask(question)
         await _answer_in_question_topic(message, html.escape(result.get('answer', '(нет ответа)')))
-        logger.info(
+        logger.debug(
             'Question answered [chat_id=%s message_id=%s thread_id=%s question_len=%d]',
             message.chat.id, message.message_id, _message_thread_id(message), len(question),
         )
@@ -328,7 +328,7 @@ async def handle_text(message: Message, state: FSMContext) -> None:
     author = message.from_user.full_name if message.from_user else None
     text = message.text or ''
 
-    logger.info(
+    logger.debug(
         'Handling Telegram text [chat_id=%s author=%r message_id=%s thread_id=%s text_len=%d '
         'is_event_topic=%s is_question_topic=%s]',
         chat_id,
@@ -341,7 +341,7 @@ async def handle_text(message: Message, state: FSMContext) -> None:
     )
 
     if not _is_allowed(chat_id, author):
-        logger.info(
+        logger.debug(
             'Ignoring message from disallowed chat or author [chat_id=%s author=%r message_id=%s thread_id=%s]',
             chat_id, author, message.message_id, _message_thread_id(message),
         )
@@ -354,7 +354,7 @@ async def handle_text(message: Message, state: FSMContext) -> None:
     # Route to ask if starts with ? in legacy no-dedicated-topic mode.
     if text.startswith('?'):
         if not _is_question_topic(message):
-            logger.info(
+            logger.debug(
                 'Ignoring question outside question topic [chat_id=%s message_id=%s thread_id=%s]',
                 chat_id, message.message_id, _message_thread_id(message),
             )
@@ -363,7 +363,7 @@ async def handle_text(message: Message, state: FSMContext) -> None:
         return
 
     if not _is_event_topic(message):
-        logger.info(
+        logger.debug(
             'Ignoring event text outside event topic [chat_id=%s message_id=%s thread_id=%s]',
             chat_id, message.message_id, _message_thread_id(message),
         )
@@ -379,7 +379,7 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
     msg_id = str(message.message_id)
 
     try:
-        logger.info(
+        logger.debug(
             'Sending Telegram message to diary API for parsing [chat_id=%s message_id=%s thread_id=%s '
             'text_len=%d timeout_sec=%d]',
             chat_id,
@@ -400,7 +400,7 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
         sent = await message.reply(_format_events(result), reply_markup=reply_markup)
         if events and sent:
             await state.update_data({str(sent.message_id): events})
-        logger.info(
+        logger.debug(
             'Parsed Telegram message [chat_id=%s message_id=%s thread_id=%s events_count=%d]',
             chat_id, message.message_id, _message_thread_id(message), len(events),
         )
@@ -451,7 +451,7 @@ async def cb_quick_action(query: CallbackQuery) -> None:
         if query.message:
             occ = occurred_at.astimezone(_MOSCOW_TZ).strftime('%H:%M')
             await query.message.answer(f'✅ {occ} — {action_id.replace("_", " ")}')
-        logger.info('Quick action saved [action_id=%s event_type=%s]', action_id, event_type)
+        logger.debug('Quick action saved [action_id=%s event_type=%s]', action_id, event_type)
     except Exception:
         logger.exception('quick_action failed [action_id=%s event_type=%s]', action_id, event_type)
         await _get_retry_queue().enqueue_create_event(
