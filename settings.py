@@ -10,6 +10,8 @@ class TelegramSettings(BaseModel):
     bot_token: str = Field(...)
     allowed_chat_ids: list[int] = Field(default_factory=list)
     allowed_authors: list[str] = Field(default_factory=list)
+    event_topic_id: int | None = Field(default=None)
+    question_topic_id: int | None = Field(default=None)
 
 
 class DiaryApiSettings(BaseModel):

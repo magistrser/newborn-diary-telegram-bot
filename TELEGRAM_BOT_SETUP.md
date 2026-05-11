@@ -57,6 +57,8 @@ telegram:
   allowed_authors:
     - Mila                  # Telegram display name(s) whose messages are auto-parsed
                             # Leave empty [] to process messages from ALL chat members
+  event_topic_id: null      # Forum topic ID for diary events; null = any topic
+  question_topic_id: null   # Forum topic ID for questions; null = any topic
 
 diary_api:
   base_url: http://localhost:8001   # URL of the running newborn_diary
@@ -103,7 +105,8 @@ INFO  Started polling
    🍼 11:42 грудь (правая)
    ```
 3. Send `/menu` to the bot to open the inline keyboard with quick-action buttons.
-4. Send `? Сколько спал вчера?` to get an answer from the QA service.
+4. Send `? Сколько спал вчера?` to get an answer from the QA service. If `question_topic_id` is
+   configured, plain text in that topic is also treated as a question.
 
 ## Inline keyboard actions
 
@@ -129,6 +132,11 @@ Tapping a button records the event immediately with the current timestamp.
 | `/ask <question>` | Same as above |
 | `/ask` (no question) | Bot prompts you, then your next message is the question |
 | `/menu` or `/start` | Shows inline keyboard |
+
+If your Telegram group uses forum topics, fill in `event_topic_id` with the topic ID where diary
+messages should be parsed as events, and `question_topic_id` with the topic ID where the bot should
+accept and answer questions. When `question_topic_id` is set, any plain text in that topic is a
+question. Leave either value `null` to keep accepting that route in any topic.
 
 ## Troubleshooting
 

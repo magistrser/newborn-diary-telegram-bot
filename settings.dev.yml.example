@@ -2,6 +2,8 @@ telegram:
   bot_token: "your-bot-token-here"
   allowed_chat_ids: []
   allowed_authors: []
+  event_topic_id: null     # forum topic ID for diary events; null = any topic
+  question_topic_id: null  # forum topic ID for questions; null = any topic
 
 diary_api:
   base_url: http://localhost:8001

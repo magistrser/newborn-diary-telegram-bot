@@ -54,6 +54,49 @@ def _get_retry_queue() -> ActionRetryQueue:
     return get_retry_queue()
 
 
+def _configured_topic_id(name: str) -> int | None:
+    value = getattr(settings.telegram, name, None)
+    return value if isinstance(value, int) else None
+
+
+def _message_thread_id(message: Message) -> int | None:
+    value = getattr(message, 'message_thread_id', None)
+    return value if isinstance(value, int) else None
+
+
+def _topic_matches(message: Message, topic_id: int | None) -> bool:
+    return topic_id is None or _message_thread_id(message) == topic_id
+
+
+def _is_event_topic(message: Message) -> bool:
+    return _topic_matches(message, _configured_topic_id('event_topic_id'))
+
+
+def _is_question_topic(message: Message) -> bool:
+    return _topic_matches(message, _configured_topic_id('question_topic_id'))
+
+
+def _has_configured_question_topic() -> bool:
+    return _configured_topic_id('question_topic_id') is not None
+
+
+def _question_text(text: str) -> str:
+    return text[1:].strip() if text.startswith('?') else text.strip()
+
+
+async def _answer_in_question_topic(message: Message, text: str) -> None:
+    topic_id = _configured_topic_id('question_topic_id')
+    if topic_id is None or _message_thread_id(message) == topic_id:
+        await message.answer(text)
+        return
+
+    await message.bot.send_message(  # type: ignore[union-attr]
+        chat_id=message.chat.id,
+        message_thread_id=topic_id,
+        text=text,
+    )
+
+
 def _occ_str(raw: str) -> str:
     try:
         return datetime.fromisoformat(raw).astimezone(_MOSCOW_TZ).strftime('%Y-%m-%d %H:%M')
@@ -172,30 +215,38 @@ async def cmd_menu(message: Message) -> None:
 
 @router.message(Command('ask'))
 async def cmd_ask(message: Message, state: FSMContext) -> None:
+    if not _is_question_topic(message):
+        return
+
     text = message.text or ''
     question = text.partition(' ')[2].strip()
     if question:
         await _handle_question(message, question)
     else:
         await state.set_state(AskState.waiting_for_question)
-        await message.answer('Задайте вопрос:')
+        await _answer_in_question_topic(message, 'Задайте вопрос:')
 
 
 # ── Question mode FSM ─────────────────────────────────────────────────────────
 
 @router.message(AskState.waiting_for_question)
 async def handle_question_in_state(message: Message, state: FSMContext) -> None:
+    if not _is_question_topic(message):
+        if _is_event_topic(message):
+            await _handle_event_text(message, state)
+        return
+
     await state.clear()
-    await _handle_question(message, message.text or '')
+    await _handle_question(message, _question_text(message.text or ''))
 
 
 async def _handle_question(message: Message, question: str) -> None:
     try:
         result = await _get_client().ask(question)
-        await message.answer(html.escape(result.get('answer', '(нет ответа)')))
+        await _answer_in_question_topic(message, html.escape(result.get('answer', '(нет ответа)')))
     except Exception as exc:
         logger.error('ask failed: %s', exc)
-        await message.answer('⚠️ Ошибка при обращении к дневнику. Попробуйте позже.')
+        await _answer_in_question_topic(message, '⚠️ Ошибка при обращении к дневнику. Попробуйте позже.')
 
 
 # ── Free-form text ────────────────────────────────────────────────────────────
@@ -210,11 +261,26 @@ async def handle_text(message: Message, state: FSMContext) -> None:
 
     text = message.text or ''
 
-    # Route to ask if starts with ?
-    if text.startswith('?'):
-        await _handle_question(message, text[1:].strip())
+    if _has_configured_question_topic() and _is_question_topic(message):
+        await _handle_question(message, _question_text(text))
         return
 
+    # Route to ask if starts with ? in legacy no-dedicated-topic mode.
+    if text.startswith('?'):
+        if not _is_question_topic(message):
+            return
+        await _handle_question(message, _question_text(text))
+        return
+
+    if not _is_event_topic(message):
+        return
+
+    await _handle_event_text(message, state)
+
+
+async def _handle_event_text(message: Message, state: FSMContext) -> None:
+    text = message.text or ''
+    chat_id = message.chat.id
     occurred_at = message.date.replace(tzinfo=timezone.utc) if message.date else datetime.now(timezone.utc)
     msg_id = str(message.message_id)
 
@@ -249,8 +315,8 @@ async def handle_text(message: Message, state: FSMContext) -> None:
 async def cb_ask_mode(query: CallbackQuery, state: FSMContext) -> None:
     await _safe_answer(query)
     await state.set_state(AskState.waiting_for_question)
-    if query.message:
-        await query.message.answer('Задайте вопрос:')
+    if query.message and not isinstance(query.message, InaccessibleMessage):
+        await _answer_in_question_topic(query.message, 'Задайте вопрос:')
 
 
 @router.callback_query(F.data.in_(set(ACTION_MAP.keys())))
@@ -316,11 +382,14 @@ async def cb_ev_del(query: CallbackQuery, state: FSMContext) -> None:
 
     events = await _get_summary_events(state, msg.message_id)
     events = [e for e in events if e.get('id') != event_id]
-    await _update_summary_events(state, msg.message_id, events)
 
     if not events:
-        await msg.edit_text('Все события удалены', reply_markup=None)
+        data = await state.get_data()
+        data.pop(str(msg.message_id), None)
+        await state.set_data(data)
+        await msg.delete()
     else:
+        await _update_summary_events(state, msg.message_id, events)
         await msg.edit_text(_format_events({'events': events}), reply_markup=event_summary_keyboard(events))
 
 

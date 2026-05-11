@@ -51,6 +51,8 @@ telegram:
   bot_token: "your-bot-token"
   allowed_chat_ids: [-1001234567890]   # empty list = allow all chats (not for production)
   allowed_authors: ["Mila"]            # empty list = allow all authors in allowed chats
+  event_topic_id: null                 # forum topic ID for diary events; null = any topic
+  question_topic_id: null              # forum topic ID for questions; null = any topic
 
 diary_api:
   base_url: http://localhost:8001
@@ -98,6 +100,11 @@ metrics. Uvicorn owns the event loop; the bot's polling runs as a background `as
 | `/menu` or `/start` | Shows sectioned inline keyboard |
 | Tap quick-action button | Creates event immediately with current UTC timestamp |
 
+For Telegram groups with forum topics enabled, set `telegram.event_topic_id` to the topic whose
+plain text should be parsed as diary events, and `telegram.question_topic_id` to the topic where
+plain text, `?`, and `/ask` questions are accepted and answered. Leaving either value `null`
+preserves the previous behavior for that route: all topics are accepted.
+
 The `diary_api.request_timeout_sec` default (660 s) is intentionally high because local LLM
 inference for a single message can take 10–30 seconds depending on the model size.
 
@@ -143,11 +150,14 @@ telegram_adapter/
 ### Free-text message handling
 
 1. `_is_allowed(chat_id, author)` gates every message.
-2. Messages starting with `?` are routed to the QA path.
-3. All other text is POSTed to `diary_api /api/v1/events/from-text` with the Telegram message ID
+2. If `question_topic_id` is configured, any text in that topic is routed to the QA path.
+3. Messages starting with `?` are routed to the QA path when they match `question_topic_id`, or in
+   any topic when `question_topic_id` is not configured.
+4. All other text is ignored unless it matches `event_topic_id`, then POSTed to
+   `diary_api /api/v1/events/from-text` with the Telegram message ID
    and chat ID. The response events are formatted in Russian and sent as a reply with the
    **event summary keyboard**.
-4. On API failure the message is enqueued in the retry queue; user sees a warning reply.
+5. On API failure the message is enqueued in the retry queue; user sees a warning reply.
 
 ### Quick-action keyboard (`/menu` or `/start`)
 

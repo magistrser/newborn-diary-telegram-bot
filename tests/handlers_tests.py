@@ -7,10 +7,16 @@ _SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 _SUMMARY_MSG_ID = 9001
 
 
-def _make_message(text: str = '', message_id: int = 1, chat_id: int = 100) -> MagicMock:
+def _make_message(
+    text: str = '',
+    message_id: int = 1,
+    chat_id: int = 100,
+    message_thread_id: int | None = None,
+) -> MagicMock:
     msg = AsyncMock()
     msg.text = text
     msg.message_id = message_id
+    msg.message_thread_id = message_thread_id
     msg.chat = MagicMock()
     msg.chat.id = chat_id
     msg.from_user = MagicMock()
@@ -27,12 +33,22 @@ def _make_message(text: str = '', message_id: int = 1, chat_id: int = 100) -> Ma
 _PROMPT_MSG_ID = 9002
 
 
-def _make_callback(data: str, message_id: int = _SUMMARY_MSG_ID) -> MagicMock:
+def _make_callback(
+    data: str,
+    message_id: int = _SUMMARY_MSG_ID,
+    chat_id: int = 100,
+    message_thread_id: int | None = None,
+) -> MagicMock:
     query = AsyncMock()
     query.data = data
     query.answer = AsyncMock()
     msg = AsyncMock()
     msg.message_id = message_id
+    msg.message_thread_id = message_thread_id
+    msg.chat = MagicMock()
+    msg.chat.id = chat_id
+    msg.bot = AsyncMock()
+    msg.bot.send_message = AsyncMock()
     msg.edit_text = AsyncMock()
     msg.edit_reply_markup = AsyncMock()
     msg.delete = AsyncMock()
@@ -77,6 +93,7 @@ def _make_api_client(**overrides: Any) -> AsyncMock:
         'id': _SAMPLE_UUID, 'type': 'sleep_start', 'occurred_at': '2026-05-10T10:00:00+03:00', 'payload': {},
     })
     client.delete_event = AsyncMock()
+    client.ask = AsyncMock(return_value={'answer': 'ok'})
     for k, v in overrides.items():
         setattr(client, k, v)
     return client
@@ -105,6 +122,44 @@ async def test_handle_text_replies_with_keyboard() -> None:
     )
 
 
+async def test_handle_text_parses_events_from_configured_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('Заснул', message_thread_id=10)
+    state = _make_fsm()
+    api = _make_api_client()
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = None
+        await handle_text(msg, state)
+
+    api.parse_text.assert_called_once()
+    msg.reply.assert_called_once()
+
+
+async def test_handle_text_ignores_events_outside_configured_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('Заснул', message_thread_id=20)
+    state = _make_fsm()
+    api = _make_api_client()
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = None
+        await handle_text(msg, state)
+
+    api.parse_text.assert_not_called()
+    msg.reply.assert_not_called()
+
+
 # ── cb_quick_action (regression) ──────────────────────────────────────────────
 
 async def test_cb_quick_action_no_edit_keyboard() -> None:
@@ -123,7 +178,7 @@ async def test_cb_quick_action_no_edit_keyboard() -> None:
 
 # ── ev_del ────────────────────────────────────────────────────────────────────
 
-async def test_cb_ev_del_removes_event_rerenders() -> None:
+async def test_cb_ev_del_deletes_empty_summary_message() -> None:
     from infrastructure.telegram.handlers import cb_ev_del
 
     events = [
@@ -137,10 +192,9 @@ async def test_cb_ev_del_removes_event_rerenders() -> None:
         await cb_ev_del(query, state)
 
     api.delete_event.assert_called_once_with(_SAMPLE_UUID)
-    query.message.edit_text.assert_called_once()
-    # No events left → "Все события удалены"
-    text_arg = query.message.edit_text.call_args.args[0]
-    assert 'удалены' in text_arg or 'удалено' in text_arg
+    query.message.delete.assert_called_once()
+    query.message.edit_text.assert_not_called()
+    query.message.answer.assert_not_called()
 
 
 # ── ev_tm ─────────────────────────────────────────────────────────────────────
@@ -368,3 +422,119 @@ async def test_handle_text_question_prefix_routes_to_ask() -> None:
 
     api.ask.assert_called_once()
     api.parse_text.assert_not_called()
+
+
+async def test_handle_text_question_prefix_answers_in_configured_question_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('? Сколько спал вчера?', message_thread_id=30)
+    state = _make_fsm()
+    api = _make_api_client(ask=AsyncMock(return_value={'answer': '8 часов'}))
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = 30
+        await handle_text(msg, state)
+
+    api.ask.assert_called_once_with('Сколько спал вчера?')
+    msg.answer.assert_called_once()
+    assert 'message_thread_id' not in msg.answer.call_args.kwargs
+    msg.bot.send_message.assert_not_called()
+
+
+async def test_handle_text_plain_text_answers_in_configured_question_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('Сколько спал вчера?', message_thread_id=30)
+    state = _make_fsm()
+    api = _make_api_client(ask=AsyncMock(return_value={'answer': '8 часов'}))
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = 30
+        await handle_text(msg, state)
+
+    api.ask.assert_called_once_with('Сколько спал вчера?')
+    api.parse_text.assert_not_called()
+    msg.answer.assert_called_once()
+
+
+async def test_handle_text_question_topic_takes_precedence_over_event_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('Сколько спал вчера?', message_thread_id=30)
+    state = _make_fsm()
+    api = _make_api_client(ask=AsyncMock(return_value={'answer': '8 часов'}))
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 30
+        mock_settings.telegram.question_topic_id = 30
+        await handle_text(msg, state)
+
+    api.ask.assert_called_once_with('Сколько спал вчера?')
+    api.parse_text.assert_not_called()
+
+
+async def test_handle_text_question_prefix_ignored_outside_configured_question_topic() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    msg = _make_message('? Сколько спал вчера?', message_thread_id=20)
+    state = _make_fsm()
+    api = _make_api_client(ask=AsyncMock(return_value={'answer': '8 часов'}))
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = 30
+        await handle_text(msg, state)
+
+    api.ask.assert_not_called()
+    api.parse_text.assert_not_called()
+    msg.answer.assert_not_called()
+
+
+async def test_handle_question_in_state_keeps_event_topic_parsing_available() -> None:
+    from infrastructure.telegram.handlers import handle_question_in_state
+
+    msg = _make_message('Заснул', message_thread_id=10)
+    state = _make_fsm()
+    api = _make_api_client()
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.event_topic_id = 10
+        mock_settings.telegram.question_topic_id = 30
+        await handle_question_in_state(msg, state)
+
+    api.parse_text.assert_called_once()
+    api.ask.assert_not_called()
+    state.clear.assert_not_called()
+
+
+async def test_cb_ask_mode_prompts_in_configured_question_topic_from_other_topic() -> None:
+    from infrastructure.telegram.handlers import cb_ask_mode
+
+    query = _make_callback('ask_mode', message_thread_id=20)
+    state = _make_fsm()
+
+    with patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.question_topic_id = 30
+        await cb_ask_mode(query, state)
+
+    query.message.answer.assert_not_called()
+    query.message.bot.send_message.assert_called_once_with(
+        chat_id=100,
+        message_thread_id=30,
+        text='Задайте вопрос:',
+    )
