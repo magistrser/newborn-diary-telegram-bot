@@ -99,7 +99,8 @@ retry:
 | GET | `/metrics` | Prometheus metrics |
 
 The bot itself uses Telegram long-polling, not webhooks. FastAPI is only there for health and
-metrics. Uvicorn owns the event loop; the bot's polling runs as a background `asyncio.Task`.
+metrics. Uvicorn owns the event loop; the bot's polling supervisor runs as a background
+`asyncio.Task`.
 
 ---
 
@@ -269,10 +270,14 @@ The lifespan in `main.py` calls `stop_polling()` on shutdown:
 2. **Closes the bot's HTTP session first** (`await bot.session.close()`). This aborts the active
    long-poll request to Telegram immediately. Without this, aiogram's own cleanup blocks waiting
    for the request to finish.
-3. Cancels the polling task and waits up to 5 seconds using `asyncio.wait` (not `asyncio.wait_for`)
-   because `wait_for` in Python 3.12+ waits for cancelled tasks' finally blocks, which can hang if
-   aiogram makes slow network calls.
+3. Cancels the polling supervisor task and waits up to 5 seconds using `asyncio.wait` (not
+   `asyncio.wait_for`) because `wait_for` in Python 3.12+ waits for cancelled tasks' finally blocks,
+   which can hang if aiogram makes slow network calls.
 4. Disposes the SQLAlchemy engine.
+
+The supervisor recreates the `Bot`/`Dispatcher` pair and restarts Telegram long-polling 5 seconds
+after `dp.start_polling()` fails or exits unexpectedly. During shutdown, the stopping flag prevents
+that reconnect loop from starting another polling attempt.
 
 `handle_signals=False` is passed to `dp.start_polling()` so aiogram does not install its own signal
 handlers — uvicorn owns signal handling.
