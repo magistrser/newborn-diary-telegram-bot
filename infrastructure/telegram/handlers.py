@@ -10,13 +10,15 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from aiogram import BaseMiddleware, F, Router
+from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import BaseStorage, StorageKey
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message, ReplyParameters, TelegramObject
 
 from application.services.action_retry_queue import ActionRetryQueue, get_retry_queue
+from domain.pending_action import PendingAction
 from domain.policies import is_allowed, merge_compatible_payload_fields
 from domain.quick_actions import ACTION_MAP
 from infrastructure.diary_api_client import DiaryApiClient
@@ -103,6 +105,10 @@ def _configured_topic_id(name: str) -> int | None:
 def _message_thread_id(message: Message) -> int | None:
     value = getattr(message, 'message_thread_id', None)
     return value if isinstance(value, int) else None
+
+
+def _message_user_id(message: Message) -> int | None:
+    return message.from_user.id if message.from_user else None
 
 
 def _topic_matches(message: Message, topic_id: int | None) -> bool:
@@ -237,6 +243,108 @@ def _format_events(data: dict) -> str:
     if not events:
         return '❓ Не удалось распознать события, сохранил как заметку'
     return '✅ Сохранил:\n' + '\n'.join(_format_event(e) for e in events)
+
+
+def _create_event_result(action: PendingAction, result: dict[str, Any]) -> dict[str, Any]:
+    event = result.get('event')
+    if isinstance(event, dict):
+        return event
+    if result.get('type') or result.get('occurred_at') or result.get('payload'):
+        return result
+    return {
+        'type': action.event_type or '',
+        'occurred_at': action.occurred_at or '',
+        'payload': action.payload or {},
+    }
+
+
+def _format_retry_success(action: PendingAction, result: dict[str, Any]) -> str:
+    if action.action_type == 'parse_text':
+        return '🔁 Повторная попытка успешна.\n' + _format_events(result)
+    if action.action_type == 'create_event':
+        return '✅ Сохранил после повтора:\n' + _format_event(_create_event_result(action, result))
+    return '✅ Повторная попытка успешна'
+
+
+def _retry_reply_parameters(action: PendingAction) -> ReplyParameters | None:
+    if not action.source_message_id:
+        return None
+    try:
+        message_id = int(action.source_message_id)
+    except ValueError:
+        return None
+    return ReplyParameters(message_id=message_id, allow_sending_without_reply=True)
+
+
+async def _store_retry_summary_events(
+    storage: BaseStorage | None,
+    bot: Bot,
+    action: PendingAction,
+    summary_message_id: int,
+    events: list[dict[str, Any]],
+) -> bool:
+    if storage is None or action.source_chat_id is None or action.source_user_id is None:
+        logger.warning(
+            'Cannot attach retry confirmation keyboard without FSM metadata '
+            '[id=%s action_type=%s has_storage=%s chat_id=%s user_id=%s]',
+            action.id, action.action_type, storage is not None, action.source_chat_id, action.source_user_id,
+        )
+        return False
+
+    try:
+        key = StorageKey(
+            bot_id=bot.id,
+            chat_id=action.source_chat_id,
+            user_id=action.source_user_id,
+        )
+        data = await storage.get_data(key)
+        data[str(summary_message_id)] = events
+        await storage.set_data(key, data)
+    except Exception:
+        logger.warning(
+            'Failed to store retry confirmation events [id=%s message_id=%s]',
+            action.id, summary_message_id,
+            exc_info=True,
+        )
+        return False
+    return True
+
+
+async def notify_retry_success(
+    bot: Bot,
+    storage: BaseStorage | None,
+    action: PendingAction,
+    result: dict[str, Any],
+) -> None:
+    if action.source_chat_id is None:
+        logger.debug(
+            'Skipping retry success Telegram notification without chat id [id=%s action_type=%s]',
+            action.id, action.action_type,
+        )
+        return
+
+    sent = await bot.send_message(
+        chat_id=action.source_chat_id,
+        text=_format_retry_success(action, result),
+        reply_parameters=_retry_reply_parameters(action),
+    )
+    events = result.get('events', []) if action.action_type == 'parse_text' else []
+    if not events or not sent:
+        return
+
+    if await _store_retry_summary_events(storage, bot, action, sent.message_id, events):
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=action.source_chat_id,
+                message_id=sent.message_id,
+                reply_markup=event_summary_keyboard(events),
+            )
+        except Exception:
+            logger.warning(
+                'Failed to attach retry confirmation keyboard [id=%s message_id=%s]',
+                action.id, sent.message_id,
+                exc_info=True,
+            )
 
 
 async def _safe_answer(query: CallbackQuery, text: str = '') -> None:
@@ -377,6 +485,7 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
     chat_id = message.chat.id
     occurred_at = message.date.replace(tzinfo=timezone.utc) if message.date else datetime.now(timezone.utc)
     msg_id = str(message.message_id)
+    user_id = _message_user_id(message)
 
     try:
         logger.debug(
@@ -415,6 +524,7 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
             source_type='telegram_live',
             source_message_id=msg_id,
             source_chat_id=chat_id,
+            source_user_id=user_id,
         )
         await message.reply('⚠️ Не удалось сохранить сообщение — повторю попытку автоматически.')
 
@@ -454,11 +564,19 @@ async def cb_quick_action(query: CallbackQuery) -> None:
         logger.debug('Quick action saved [action_id=%s event_type=%s]', action_id, event_type)
     except Exception:
         logger.exception('quick_action failed [action_id=%s event_type=%s]', action_id, event_type)
+        source_chat_id = None
+        source_message_id = None
+        if query.message and not isinstance(query.message, InaccessibleMessage):
+            source_chat_id = query.message.chat.id
+            source_message_id = str(query.message.message_id)
         await _get_retry_queue().enqueue_create_event(
             event_type=event_type,
             occurred_at=occurred_at,
             payload=payload,
             source_type='telegram_quick_action',
+            source_message_id=source_message_id,
+            source_chat_id=source_chat_id,
+            source_user_id=query.from_user.id,
         )
         await query.answer('⚠️ Ошибка — повторю попытку автоматически')
 

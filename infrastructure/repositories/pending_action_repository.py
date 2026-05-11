@@ -1,4 +1,4 @@
-from sqlalchemy import delete as sa_delete, select
+from sqlalchemy import delete as sa_delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -18,6 +18,7 @@ def _to_domain(row: PendingActionModel) -> PendingAction:
         source_type=row.source_type,
         source_message_id=row.source_message_id,
         source_chat_id=row.source_chat_id,
+        source_user_id=row.source_user_id,
         event_type=row.event_type,
         payload=row.payload,
     )
@@ -32,6 +33,9 @@ class SqlPendingActionsRepository:
     async def setup(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(
+                text('ALTER TABLE pending_actions ADD COLUMN IF NOT EXISTS source_user_id BIGINT')
+            )
 
     async def load_all(self) -> list[PendingAction]:
         async with self._session_factory() as session:
@@ -55,6 +59,7 @@ class SqlPendingActionsRepository:
                         source_type=action.source_type,
                         source_message_id=action.source_message_id,
                         source_chat_id=action.source_chat_id,
+                        source_user_id=action.source_user_id,
                         event_type=action.event_type,
                         payload=action.payload,
                     )

@@ -1,6 +1,7 @@
 """Starts aiogram long-polling and the action retry queue as asyncio tasks."""
 import asyncio
 import logging
+from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
 from aiogram import Bot, Dispatcher
@@ -9,9 +10,10 @@ from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from application.services.action_retry_queue import ActionRetryQueue, set_retry_queue
+from domain.pending_action import PendingAction
 from infrastructure.composition import TelegramAdapterApplicationFactory
 from infrastructure.repositories.fsm_state_storage import SqlFsmStorage
-from infrastructure.telegram.handlers import router
+from infrastructure.telegram.handlers import notify_retry_success, router
 from settings import PostgresSettings, settings
 
 logger = logging.getLogger(__name__)
@@ -43,11 +45,28 @@ class _RunnerState:
     bot: Bot | None = None
     polling_task: asyncio.Task[None] | None = None
     engine: AsyncEngine | None = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None
     retry_queue: ActionRetryQueue | None = None
     stopping: bool = False
 
 
 _state = _RunnerState()
+
+
+async def _notify_retry_success(action: PendingAction, result: dict[str, Any]) -> None:
+    if _state.bot is None:
+        logger.warning(
+            'Cannot notify Telegram retry success because bot is not connected [id=%s action_type=%s]',
+            action.id, action.action_type,
+        )
+        return
+
+    storage = (
+        SqlFsmStorage(_state.engine, _state.session_factory)
+        if _state.engine is not None and _state.session_factory is not None
+        else None
+    )
+    await notify_retry_success(_state.bot, storage, action, result)
 
 
 async def _close_bot_session(bot: Bot) -> None:
@@ -127,10 +146,12 @@ async def start_polling() -> None:
     _state.engine = engine
     logger.debug('SQLAlchemy engine created [pool_size=%d]', settings.postgres.pool_size)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    _state.session_factory = session_factory
 
     _state.retry_queue = TelegramAdapterApplicationFactory.action_retry_queue(
         engine,
         session_factory,
+        on_success=_notify_retry_success,
     )
     await _state.retry_queue.initialize()
     _state.retry_queue.start()
@@ -167,6 +188,7 @@ async def stop_polling() -> None:
         await _state.engine.dispose()
         _state.engine = None
         logger.debug('SQLAlchemy engine disposed')
+    _state.session_factory = None
     _state.bot = None
     _state.retry_queue = None
     logger.info('Telegram polling stopped')

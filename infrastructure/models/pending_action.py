@@ -19,5 +19,6 @@ class PendingActionModel(Base):
     source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     event_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

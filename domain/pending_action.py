@@ -14,5 +14,6 @@ class PendingAction(BaseModel):
     source_type: str | None = None
     source_message_id: str | None = None
     source_chat_id: int | None = None
+    source_user_id: int | None = None
     event_type: str | None = None
     payload: dict[str, Any] | None = None

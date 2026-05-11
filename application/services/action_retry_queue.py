@@ -18,12 +18,13 @@ Architecture
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from application.ports import DiaryApiPort, PendingActionsRepositoryPort
 from domain.pending_action import PendingAction
 
 logger = logging.getLogger(__name__)
+RetrySuccessCallback = Callable[[PendingAction, dict[str, Any]], Awaitable[None]]
 
 
 # ── queue ─────────────────────────────────────────────────────────────────────
@@ -43,10 +44,12 @@ class ActionRetryQueue:
         repo: PendingActionsRepositoryPort,
         diary_api: DiaryApiPort,
         retry_interval_min: int = 10,
+        on_success: RetrySuccessCallback | None = None,
     ) -> None:
         self._repo = repo
         self._diary_api = diary_api
         self._interval_min = retry_interval_min
+        self._on_success = on_success
         self._actions: dict[str, PendingAction] = {}
         self._task: asyncio.Task | None = None
 
@@ -67,6 +70,7 @@ class ActionRetryQueue:
         source_type: str,
         source_message_id: str | None = None,
         source_chat_id: int | None = None,
+        source_user_id: int | None = None,
     ) -> str:
         action = PendingAction(
             action_type='parse_text',
@@ -76,6 +80,7 @@ class ActionRetryQueue:
             source_type=source_type,
             source_message_id=source_message_id,
             source_chat_id=source_chat_id,
+            source_user_id=source_user_id,
         )
         self._actions[action.id] = action
         await self._repo.upsert(action)
@@ -89,6 +94,9 @@ class ActionRetryQueue:
         occurred_at: datetime,
         payload: dict[str, Any],
         source_type: str,
+        source_message_id: str | None = None,
+        source_chat_id: int | None = None,
+        source_user_id: int | None = None,
     ) -> str:
         action = PendingAction(
             action_type='create_event',
@@ -97,6 +105,9 @@ class ActionRetryQueue:
             occurred_at=occurred_at.isoformat(),
             payload=payload,
             source_type=source_type,
+            source_message_id=source_message_id,
+            source_chat_id=source_chat_id,
+            source_user_id=source_user_id,
         )
         self._actions[action.id] = action
         await self._repo.upsert(action)
@@ -119,7 +130,7 @@ class ActionRetryQueue:
                 continue
             action.attempt_count += 1
             try:
-                await _execute(self._diary_api, action)
+                result = await _execute(self._diary_api, action)
                 del self._actions[action_id]
                 await self._repo.delete(action_id)
                 succeeded += 1
@@ -134,8 +145,22 @@ class ActionRetryQueue:
                     'Retry failed for action %s (attempt %d): %s',
                     action_id, action.attempt_count, exc,
                 )
+            else:
+                await self._notify_success(action, result)
 
         return succeeded, failed
+
+    async def _notify_success(self, action: PendingAction, result: dict[str, Any]) -> None:
+        if self._on_success is None:
+            return
+        try:
+            await self._on_success(action, result)
+        except Exception:
+            logger.warning(
+                'Retry success notification failed [id=%s action_type=%s]',
+                action.id, action.action_type,
+                exc_info=True,
+            )
 
     async def _retry_loop(self) -> None:
         while True:
@@ -195,14 +220,14 @@ def get_retry_queue() -> ActionRetryQueue:
 
 # ── execution helper ──────────────────────────────────────────────────────────
 
-async def _execute(client: DiaryApiPort, action: PendingAction) -> None:
+async def _execute(client: DiaryApiPort, action: PendingAction) -> dict[str, Any]:
     occurred_at = (
         datetime.fromisoformat(action.occurred_at)
         if action.occurred_at
         else datetime.now(timezone.utc)
     )
     if action.action_type == 'parse_text':
-        await client.parse_text(
+        return await client.parse_text(
             text=action.text or '',
             occurred_at=occurred_at,
             source_type=action.source_type or 'telegram_live',
@@ -210,7 +235,7 @@ async def _execute(client: DiaryApiPort, action: PendingAction) -> None:
             source_chat_id=action.source_chat_id,
         )
     elif action.action_type == 'create_event':
-        await client.create_event(
+        return await client.create_event(
             event_type=action.event_type or '',
             occurred_at=occurred_at,
             payload=action.payload or {},
