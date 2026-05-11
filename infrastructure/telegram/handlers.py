@@ -10,13 +10,14 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from aiogram import BaseMiddleware, F, Router
+from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message, ReplyParameters, TelegramObject
 
 from application.services.action_retry_queue import ActionRetryQueue, get_retry_queue
+from domain.pending_action import PendingAction
 from domain.policies import is_allowed, merge_compatible_payload_fields
 from domain.quick_actions import ACTION_MAP
 from infrastructure.diary_api_client import DiaryApiClient
@@ -239,6 +240,52 @@ def _format_events(data: dict) -> str:
     return '✅ Сохранил:\n' + '\n'.join(_format_event(e) for e in events)
 
 
+def _create_event_result(action: PendingAction, result: dict[str, Any]) -> dict[str, Any]:
+    event = result.get('event')
+    if isinstance(event, dict):
+        return event
+    if result.get('type') or result.get('occurred_at') or result.get('payload'):
+        return result
+    return {
+        'type': action.event_type or '',
+        'occurred_at': action.occurred_at or '',
+        'payload': action.payload or {},
+    }
+
+
+def _format_retry_success(action: PendingAction, result: dict[str, Any]) -> str:
+    if action.action_type == 'parse_text':
+        return '🔁 Повторная попытка успешна.\n' + _format_events(result)
+    if action.action_type == 'create_event':
+        return '✅ Сохранил после повтора:\n' + _format_event(_create_event_result(action, result))
+    return '✅ Повторная попытка успешна'
+
+
+def _retry_reply_parameters(action: PendingAction) -> ReplyParameters | None:
+    if not action.source_message_id:
+        return None
+    try:
+        message_id = int(action.source_message_id)
+    except ValueError:
+        return None
+    return ReplyParameters(message_id=message_id, allow_sending_without_reply=True)
+
+
+async def notify_retry_success(bot: Bot, action: PendingAction, result: dict[str, Any]) -> None:
+    if action.source_chat_id is None:
+        logger.debug(
+            'Skipping retry success Telegram notification without chat id [id=%s action_type=%s]',
+            action.id, action.action_type,
+        )
+        return
+
+    await bot.send_message(
+        chat_id=action.source_chat_id,
+        text=_format_retry_success(action, result),
+        reply_parameters=_retry_reply_parameters(action),
+    )
+
+
 async def _safe_answer(query: CallbackQuery, text: str = '') -> None:
     try:
         await query.answer(text)
@@ -454,11 +501,18 @@ async def cb_quick_action(query: CallbackQuery) -> None:
         logger.debug('Quick action saved [action_id=%s event_type=%s]', action_id, event_type)
     except Exception:
         logger.exception('quick_action failed [action_id=%s event_type=%s]', action_id, event_type)
+        source_chat_id = None
+        source_message_id = None
+        if query.message and not isinstance(query.message, InaccessibleMessage):
+            source_chat_id = query.message.chat.id
+            source_message_id = str(query.message.message_id)
         await _get_retry_queue().enqueue_create_event(
             event_type=event_type,
             occurred_at=occurred_at,
             payload=payload,
             source_type='telegram_quick_action',
+            source_message_id=source_message_id,
+            source_chat_id=source_chat_id,
         )
         await query.answer('⚠️ Ошибка — повторю попытку автоматически')
 

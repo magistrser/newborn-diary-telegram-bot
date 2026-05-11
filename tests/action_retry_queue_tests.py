@@ -148,12 +148,16 @@ async def test_enqueue_create_event_adds_to_in_memory_and_repo() -> None:
         occurred_at=_NOW,
         payload={'kind': 'pee'},
         source_type='telegram_quick_action',
+        source_message_id='77',
+        source_chat_id=100,
     )
 
     assert queue.pending_count == 1
     stored = repo.store[action_id]
     assert stored.event_type == 'diaper'
     assert stored.payload == {'kind': 'pee'}
+    assert stored.source_message_id == '77'
+    assert stored.source_chat_id == 100
 
 
 # ── retry_once — success ──────────────────────────────────────────────────────
@@ -185,6 +189,57 @@ async def test_retry_once_create_event_success() -> None:
     assert succeeded == 1
     assert failed == 0
     assert queue.pending_count == 0
+
+
+async def test_retry_once_notifies_on_success_after_deleting_action() -> None:
+    action = _make_parse_text_action()
+    repo = InMemoryRepo([action])
+    result = {'events': []}
+    mock_client = _make_api_client()
+    mock_client.parse_text = AsyncMock(return_value=result)
+    on_success = AsyncMock()
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client, on_success=on_success)
+
+    await queue.initialize()
+    succeeded, failed = await queue.retry_once()
+
+    assert succeeded == 1
+    assert failed == 0
+    assert action.id not in repo.store
+    on_success.assert_awaited_once_with(action, result)
+
+
+async def test_retry_once_does_not_notify_on_retry_failure() -> None:
+    action = _make_parse_text_action()
+    repo = InMemoryRepo([action])
+    mock_client = _make_api_client()
+    mock_client.parse_text = AsyncMock(side_effect=Exception('server down'))
+    on_success = AsyncMock()
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client, on_success=on_success)
+
+    await queue.initialize()
+    succeeded, failed = await queue.retry_once()
+
+    assert succeeded == 0
+    assert failed == 1
+    on_success.assert_not_awaited()
+
+
+async def test_retry_once_ignores_success_notification_failure() -> None:
+    action = _make_parse_text_action()
+    repo = InMemoryRepo([action])
+    mock_client = _make_api_client()
+    mock_client.parse_text = AsyncMock(return_value={'events': []})
+    on_success = AsyncMock(side_effect=Exception('telegram unavailable'))
+    queue = ActionRetryQueue(repo=repo, diary_api=mock_client, on_success=on_success)
+
+    await queue.initialize()
+    succeeded, failed = await queue.retry_once()
+
+    assert succeeded == 1
+    assert failed == 0
+    assert queue.pending_count == 0
+    assert action.id not in repo.store
 
 
 # ── retry_once — failure ──────────────────────────────────────────────────────
@@ -537,6 +592,30 @@ def _make_fsm() -> AsyncMock:
     return state
 
 
+async def test_notify_retry_success_sends_parse_text_result_to_source_chat() -> None:
+    from infrastructure.telegram.handlers import notify_retry_success
+
+    action = _make_parse_text_action(source_message_id='42', source_chat_id=100)
+    bot = AsyncMock()
+    result = {
+        'events': [{
+            'id': 'event-1',
+            'type': 'sleep_start',
+            'occurred_at': _NOW.isoformat(),
+            'payload': {},
+        }],
+    }
+
+    await notify_retry_success(bot, action, result)
+
+    bot.send_message.assert_awaited_once()
+    kwargs = bot.send_message.call_args.kwargs
+    assert kwargs['chat_id'] == 100
+    assert 'Повторная попытка успешна' in kwargs['text']
+    assert 'Сохранил' in kwargs['text']
+    assert kwargs['reply_parameters'].message_id == 42
+
+
 async def test_handle_text_enqueues_on_parse_text_failure() -> None:
     from infrastructure.telegram.handlers import handle_text
 
@@ -570,6 +649,8 @@ async def test_cb_quick_action_enqueues_on_create_event_failure() -> None:
     query.data = 'sleep_start'
     query.answer = AsyncMock()
     query.message = AsyncMock()
+    query.message.chat.id = 100
+    query.message.message_id = 77
 
     api = AsyncMock()
     api.create_event = AsyncMock(side_effect=Exception('server down'))
@@ -585,6 +666,8 @@ async def test_cb_quick_action_enqueues_on_create_event_failure() -> None:
     kwargs = retry_queue.enqueue_create_event.call_args.kwargs
     assert kwargs['event_type'] == 'sleep_start'
     assert kwargs['source_type'] == 'telegram_quick_action'
+    assert kwargs['source_chat_id'] == 100
+    assert kwargs['source_message_id'] == '77'
     query.answer.assert_called()
     assert 'повторю' in query.answer.call_args.args[0].lower()
 
