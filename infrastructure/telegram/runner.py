@@ -66,6 +66,19 @@ async def _run_polling_once(
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     _state.bot = bot
+    bot_info = await bot.get_me()
+    logger.info(
+        'Connected to Telegram bot [id=%s username=@%s name=%r]',
+        bot_info.id, bot_info.username, bot_info.full_name,
+    )
+    logger.info(
+        'Telegram routing config [allowed_chat_ids=%s allowed_authors=%s event_topic_id=%s question_topic_id=%s]',
+        settings.telegram.allowed_chat_ids or 'ALL',
+        settings.telegram.allowed_authors or 'ALL',
+        settings.telegram.event_topic_id,
+        settings.telegram.question_topic_id,
+    )
+    logger.info('Telegram update logging enabled; incoming messages and callbacks will be logged before filters')
     dp = Dispatcher(storage=SqlFsmStorage(engine, session_factory))
     dp.include_router(router)
 

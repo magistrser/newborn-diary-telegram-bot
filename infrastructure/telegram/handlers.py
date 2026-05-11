@@ -5,15 +5,16 @@ All handlers are registered on a single Router defined here.
 import html
 import logging
 import re
+from collections.abc import Awaitable
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from aiogram import F, Router
+from aiogram import BaseMiddleware, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message, TelegramObject
 
 from application.services.action_retry_queue import ActionRetryQueue, get_retry_queue
 from domain.policies import is_allowed, merge_compatible_payload_fields
@@ -27,6 +28,46 @@ _MOSCOW_TZ = ZoneInfo('Europe/Moscow')
 logger = logging.getLogger(__name__)
 
 router = Router(name='diary')
+
+
+class TelegramUpdateLoggingMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, Message):
+            author = event.from_user.full_name if event.from_user else None
+            user_id = event.from_user.id if event.from_user else None
+            logger.info(
+                'Telegram message received [chat_id=%s chat_type=%s author=%r user_id=%s '
+                'message_id=%s thread_id=%s has_text=%s]',
+                event.chat.id,
+                event.chat.type,
+                author,
+                user_id,
+                event.message_id,
+                _message_thread_id(event),
+                bool(event.text),
+            )
+        elif isinstance(event, CallbackQuery):
+            msg = event.message
+            chat_id = msg.chat.id if msg and not isinstance(msg, InaccessibleMessage) else None
+            message_id = msg.message_id if msg else None
+            logger.info(
+                'Telegram callback received [chat_id=%s from_user_id=%s message_id=%s data=%r]',
+                chat_id,
+                event.from_user.id,
+                message_id,
+                event.data,
+            )
+
+        return await handler(event, data)
+
+
+router.message.outer_middleware(TelegramUpdateLoggingMiddleware())
+router.callback_query.outer_middleware(TelegramUpdateLoggingMiddleware())
 
 
 class AskState(StatesGroup):
