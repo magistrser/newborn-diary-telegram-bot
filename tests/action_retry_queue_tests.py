@@ -200,7 +200,7 @@ async def test_retry_once_create_event_success() -> None:
 async def test_retry_once_notifies_on_success_after_deleting_action() -> None:
     action = _make_parse_text_action()
     repo = InMemoryRepo([action])
-    result = {'events': []}
+    result: dict[str, Any] = {'events': []}
     mock_client = _make_api_client()
     mock_client.parse_text = AsyncMock(return_value=result)
     on_success = AsyncMock()
