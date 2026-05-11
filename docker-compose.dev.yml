@@ -1,0 +1,54 @@
+services:
+  adapter:
+    build:
+      context: .
+      target: pipeline
+      args:
+        DOCKER_REGISTRY: ${DOCKER_REGISTRY:-docker.io/library}
+    restart: always
+    network_mode: bridge
+    working_dir: /app
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - 'exec fastapi dev main.py --host 0.0.0.0 --port 8002'
+    ports:
+      - '${TELEGRAM_ADAPTER_PORT:-8002}:8002'
+    environment:
+      - ENVIRONMENT=PRODUCTION
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - .:/app
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  git-puller:
+    image: alpine/git:latest
+    restart: always
+    network_mode: bridge
+    working_dir: /repo
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -eu
+        while true; do
+          echo "[$$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Pulling telegram_adapter"
+          git -c safe.directory=/repo -C /repo pull --ff-only || true
+          sleep "$${GIT_PULL_INTERVAL_SEC:-300}"
+        done
+    environment:
+      HOME: /host-home
+      GIT_PULL_INTERVAL_SEC: ${GIT_PULL_INTERVAL_SEC:-300}
+    volumes:
+      - .:/repo
+      - ${HOME}:/host-home:ro

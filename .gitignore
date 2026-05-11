@@ -138,3 +138,4 @@ fixtures/coutry_codes.json
 *.http
 settings.yml
 settings.dev.yml
+settings.docker.yml

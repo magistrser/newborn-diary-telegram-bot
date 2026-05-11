@@ -38,7 +38,21 @@ uv sync
 uv run fastapi dev --port 8002
 ```
 
-The adapter creates its Postgres database automatically at startup if it does not exist.
+To run the adapter itself in Docker with the source mounted and FastAPI hot reload enabled:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+The adapter container runs with `ENVIRONMENT=PRODUCTION` and mounts local `settings.docker.yml` as
+`/app/settings.yml`. Keep the bot token, `newborn_diary` API URL, and shared Postgres settings
+there.
+The same compose file includes a `git-puller` sidecar that runs `git pull --ff-only` every
+`GIT_PULL_INTERVAL_SEC` seconds, defaulting to 300. It mounts the server user's home directory
+read-only as Git credential context and relies on FastAPI hot reload for picked-up source changes.
+Dependency changes still require rebuilding the image.
+
+The adapter creates its `telegram_adapter` database in the shared Postgres at startup if it does not exist.
 No manual migration step is needed — tables are created via `SqlFsmStorage` and
 `SqlPendingActionsRepository` on first run.
 
