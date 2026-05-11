@@ -1,10 +1,32 @@
 """Async HTTP client for the diary_api service."""
+import logging
+from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
 import httpx
 
 from settings import DiaryApiSettings
+
+logger = logging.getLogger(__name__)
+_ERROR_BODY_LOG_LIMIT = 500
+
+
+def _response_body_excerpt(response: httpx.Response) -> str:
+    with suppress(Exception):
+        return response.text[:_ERROR_BODY_LOG_LIMIT]
+    return ''
+
+
+def _log_http_status_error(method: str, path: str, exc: httpx.HTTPStatusError) -> None:
+    logger.warning(
+        'Diary API returned an error [method=%s path=%s status=%d body=%r]',
+        method, path, exc.response.status_code, _response_body_excerpt(exc.response),
+    )
+
+
+def _log_request_error(method: str, path: str, exc: httpx.RequestError) -> None:
+    logger.warning('Diary API request failed [method=%s path=%s error=%s]', method, path, exc)
 
 
 class DiaryApiClient:
@@ -30,13 +52,18 @@ class DiaryApiClient:
         if source_chat_id is not None:
             payload['source_chat_id'] = source_chat_id
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f'{self._base_url}/api/v1/events/from-text',
-                json=payload,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        path = '/api/v1/events/from-text'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(f'{self._base_url}{path}', json=payload)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('POST', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('POST', path, exc)
+            raise
 
     async def create_event(
         self,
@@ -51,19 +78,32 @@ class DiaryApiClient:
             'payload': payload,
             'source_type': source_type,
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f'{self._base_url}/api/v1/events',
-                json=body,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        path = '/api/v1/events'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(f'{self._base_url}{path}', json=body)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('POST', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('POST', path, exc)
+            raise
 
     async def get_event(self, event_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(f'{self._base_url}/api/v1/events/{event_id}')
-            resp.raise_for_status()
-            return resp.json()
+        path = f'/api/v1/events/{event_id}'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(f'{self._base_url}{path}')
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('GET', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('GET', path, exc)
+            raise
 
     async def update_event(
         self,
@@ -80,24 +120,42 @@ class DiaryApiClient:
             body['type'] = event_type
         if payload is not None:
             body['payload'] = payload
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.patch(
-                f'{self._base_url}/api/v1/events/{event_id}',
-                json=body,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        path = f'/api/v1/events/{event_id}'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.patch(f'{self._base_url}{path}', json=body)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('PATCH', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('PATCH', path, exc)
+            raise
 
     async def delete_event(self, event_id: str) -> None:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.delete(f'{self._base_url}/api/v1/events/{event_id}')
-            resp.raise_for_status()
+        path = f'/api/v1/events/{event_id}'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.delete(f'{self._base_url}{path}')
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('DELETE', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('DELETE', path, exc)
+            raise
 
     async def ask(self, question: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f'{self._base_url}/api/v1/ask',
-                json={'question': question},
-            )
-            resp.raise_for_status()
-            return resp.json()
+        path = '/api/v1/ask'
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(f'{self._base_url}{path}', json={'question': question})
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            _log_http_status_error('POST', path, exc)
+            raise
+        except httpx.RequestError as exc:
+            _log_request_error('POST', path, exc)
+            raise

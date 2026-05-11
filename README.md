@@ -89,6 +89,8 @@ retry:
 - `TEST` → `settings.test.yml`
 - `PRODUCTION` → `settings.yml`
 
+`LOG_LEVEL` controls application log verbosity and defaults to `INFO`.
+
 ---
 
 ## API endpoints
@@ -101,6 +103,11 @@ retry:
 The bot itself uses Telegram long-polling, not webhooks. FastAPI is only there for health and
 metrics. Uvicorn owns the event loop; the bot's polling supervisor runs as a background
 `asyncio.Task`.
+
+At `INFO` level, logs show startup/shutdown progress, Postgres setup, retry queue state, Telegram
+polling supervisor activity, and non-probe HTTP requests. Failures include IDs such as chat ID,
+message ID, topic ID, event ID, or action type so container logs are enough to see which part is
+stuck without logging full message text.
 
 ---
 

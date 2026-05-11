@@ -55,8 +55,7 @@ class ActionRetryQueue:
         await self._repo.setup()
         actions = await self._repo.load_all()
         self._actions = {a.id: a for a in actions}
-        if self._actions:
-            logger.info('Loaded %d pending action(s) from database', len(self._actions))
+        logger.info('Loaded %d pending action(s) from database', len(self._actions))
 
     # ── enqueue ───────────────────────────────────────────────────────────────
 
@@ -143,7 +142,18 @@ class ActionRetryQueue:
             await asyncio.sleep(self._interval_min * 60)
             if self._actions:
                 logger.info('Retrying %d pending action(s)…', len(self._actions))
-                await self.retry_once()
+                try:
+                    succeeded, failed = await self.retry_once()
+                except asyncio.CancelledError:
+                    logger.info('Action retry loop cancelled')
+                    raise
+                except Exception:
+                    logger.exception('Action retry loop failed; will try again on the next interval')
+                else:
+                    logger.info(
+                        'Retry pass completed [succeeded=%d failed=%d pending=%d]',
+                        succeeded, failed, self.pending_count,
+                    )
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -157,6 +167,7 @@ class ActionRetryQueue:
         if self._task:
             self._task.cancel()
             self._task = None
+            logger.info('Action retry loop stopped')
 
     @property
     def pending_count(self) -> int:

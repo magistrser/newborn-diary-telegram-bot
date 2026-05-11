@@ -1,7 +1,6 @@
 """Starts aiogram long-polling and the action retry queue as asyncio tasks."""
 import asyncio
 import logging
-from contextlib import suppress
 
 import asyncpg  # type: ignore[import-untyped]
 from aiogram import Bot, Dispatcher
@@ -20,6 +19,10 @@ _POLLING_RESTART_DELAY_SEC = 5.0
 
 
 async def _ensure_database_exists(pg: PostgresSettings) -> None:
+    logger.info(
+        'Checking Postgres database [host=%s port=%d database=%s user=%s]',
+        pg.host, pg.port, pg.db_name, pg.user,
+    )
     conn = await asyncpg.connect(
         host=pg.host, port=pg.port,
         user=pg.user, password=pg.password,
@@ -30,6 +33,8 @@ async def _ensure_database_exists(pg: PostgresSettings) -> None:
         if not exists:
             await conn.execute(f'CREATE DATABASE "{pg.db_name}"')
             logger.info('Created database %r', pg.db_name)
+        else:
+            logger.info('Postgres database exists [database=%s]', pg.db_name)
     finally:
         await conn.close()
 
@@ -46,8 +51,10 @@ _state = _RunnerState()
 
 
 async def _close_bot_session(bot: Bot) -> None:
-    with suppress(Exception):
+    try:
         await bot.session.close()
+    except Exception:
+        logger.warning('Failed to close Telegram bot HTTP session', exc_info=True)
 
 
 async def _run_polling_once(
@@ -63,7 +70,7 @@ async def _run_polling_once(
     dp.include_router(router)
 
     try:
-        logger.info('Starting Telegram long-polling …')
+        logger.info('Starting Telegram long-polling [allowed_updates=message,callback_query]')
         await dp.start_polling(
             bot,
             allowed_updates=['message', 'callback_query'],
@@ -74,6 +81,7 @@ async def _run_polling_once(
         if _state.bot is bot:
             _state.bot = None
         await _close_bot_session(bot)
+        logger.info('Telegram bot HTTP session closed')
 
 
 async def _polling_supervisor(
@@ -100,9 +108,11 @@ async def _polling_supervisor(
 
 async def start_polling() -> None:
     _state.stopping = False
+    logger.info('Telegram adapter runner startup started')
     await _ensure_database_exists(settings.postgres)
     engine = settings.postgres.create_engine()
     _state.engine = engine
+    logger.info('SQLAlchemy engine created [pool_size=%d]', settings.postgres.pool_size)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     _state.retry_queue = TelegramAdapterApplicationFactory.action_retry_queue(
@@ -112,15 +122,18 @@ async def start_polling() -> None:
     await _state.retry_queue.initialize()
     _state.retry_queue.start()
     set_retry_queue(_state.retry_queue)
+    logger.info('Action retry queue ready [pending_count=%d]', _state.retry_queue.pending_count)
 
     _state.polling_task = asyncio.create_task(
         _polling_supervisor(engine, session_factory),
         name='telegram-polling-supervisor',
     )
+    logger.info('Telegram polling supervisor task started')
 
 
 async def stop_polling() -> None:
     _state.stopping = True
+    logger.info('Telegram adapter runner shutdown started')
     if _state.retry_queue:
         _state.retry_queue.stop()
     if _state.bot:
@@ -134,10 +147,13 @@ async def stop_polling() -> None:
         # makes slow network calls. asyncio.wait returns after the timeout without
         # waiting for pending tasks to finish.
         await asyncio.wait({_state.polling_task}, timeout=5.0)
+        if not _state.polling_task.done():
+            logger.warning('Telegram polling supervisor did not finish within shutdown timeout')
         _state.polling_task = None
     if _state.engine:
         await _state.engine.dispose()
         _state.engine = None
+        logger.info('SQLAlchemy engine disposed')
     _state.bot = None
     _state.retry_queue = None
     logger.info('Telegram polling stopped')

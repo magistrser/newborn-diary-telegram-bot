@@ -201,8 +201,8 @@ def _format_events(data: dict) -> str:
 async def _safe_answer(query: CallbackQuery, text: str = '') -> None:
     try:
         await query.answer(text)
-    except Exception as exc:
-        logger.warning('query.answer failed (stale callback?): %s', exc)
+    except Exception:
+        logger.warning('query.answer failed (stale callback?)', exc_info=True)
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -210,12 +210,20 @@ async def _safe_answer(query: CallbackQuery, text: str = '') -> None:
 @router.message(Command('start'))
 @router.message(Command('menu'))
 async def cmd_menu(message: Message) -> None:
+    logger.info(
+        'Sending menu [chat_id=%s message_id=%s thread_id=%s]',
+        message.chat.id, message.message_id, _message_thread_id(message),
+    )
     await message.answer('Выберите действие:', reply_markup=main_keyboard())
 
 
 @router.message(Command('ask'))
 async def cmd_ask(message: Message, state: FSMContext) -> None:
     if not _is_question_topic(message):
+        logger.info(
+            'Ignoring /ask outside question topic [chat_id=%s message_id=%s thread_id=%s]',
+            message.chat.id, message.message_id, _message_thread_id(message),
+        )
         return
 
     text = message.text or ''
@@ -244,8 +252,15 @@ async def _handle_question(message: Message, question: str) -> None:
     try:
         result = await _get_client().ask(question)
         await _answer_in_question_topic(message, html.escape(result.get('answer', '(нет ответа)')))
-    except Exception as exc:
-        logger.error('ask failed: %s', exc)
+        logger.info(
+            'Question answered [chat_id=%s message_id=%s thread_id=%s question_len=%d]',
+            message.chat.id, message.message_id, _message_thread_id(message), len(question),
+        )
+    except Exception:
+        logger.exception(
+            'ask failed [chat_id=%s message_id=%s thread_id=%s question_len=%d]',
+            message.chat.id, message.message_id, _message_thread_id(message), len(question),
+        )
         await _answer_in_question_topic(message, '⚠️ Ошибка при обращении к дневнику. Попробуйте позже.')
 
 
@@ -257,6 +272,10 @@ async def handle_text(message: Message, state: FSMContext) -> None:
     author = message.from_user.full_name if message.from_user else None
 
     if not _is_allowed(chat_id, author):
+        logger.info(
+            'Ignoring message from disallowed chat or author [chat_id=%s author=%r message_id=%s thread_id=%s]',
+            chat_id, author, message.message_id, _message_thread_id(message),
+        )
         return
 
     text = message.text or ''
@@ -268,11 +287,19 @@ async def handle_text(message: Message, state: FSMContext) -> None:
     # Route to ask if starts with ? in legacy no-dedicated-topic mode.
     if text.startswith('?'):
         if not _is_question_topic(message):
+            logger.info(
+                'Ignoring question outside question topic [chat_id=%s message_id=%s thread_id=%s]',
+                chat_id, message.message_id, _message_thread_id(message),
+            )
             return
         await _handle_question(message, _question_text(text))
         return
 
     if not _is_event_topic(message):
+        logger.info(
+            'Ignoring event text outside event topic [chat_id=%s message_id=%s thread_id=%s]',
+            chat_id, message.message_id, _message_thread_id(message),
+        )
         return
 
     await _handle_event_text(message, state)
@@ -297,8 +324,15 @@ async def _handle_event_text(message: Message, state: FSMContext) -> None:
         sent = await message.reply(_format_events(result), reply_markup=reply_markup)
         if events and sent:
             await state.update_data({str(sent.message_id): events})
-    except Exception as exc:
-        logger.error('parse_text failed: %s', exc)
+        logger.info(
+            'Parsed Telegram message [chat_id=%s message_id=%s thread_id=%s events_count=%d]',
+            chat_id, message.message_id, _message_thread_id(message), len(events),
+        )
+    except Exception:
+        logger.exception(
+            'parse_text failed [chat_id=%s message_id=%s thread_id=%s text_len=%d]',
+            chat_id, message.message_id, _message_thread_id(message), len(text),
+        )
         await _get_retry_queue().enqueue_parse_text(
             text=text,
             occurred_at=occurred_at,
@@ -341,8 +375,9 @@ async def cb_quick_action(query: CallbackQuery) -> None:
         if query.message:
             occ = occurred_at.astimezone(_MOSCOW_TZ).strftime('%H:%M')
             await query.message.answer(f'✅ {occ} — {action_id.replace("_", " ")}')
-    except Exception as exc:
-        logger.error('quick_action failed: %s', exc)
+        logger.info('Quick action saved [action_id=%s event_type=%s]', action_id, event_type)
+    except Exception:
+        logger.exception('quick_action failed [action_id=%s event_type=%s]', action_id, event_type)
         await _get_retry_queue().enqueue_create_event(
             event_type=event_type,
             occurred_at=occurred_at,
@@ -374,8 +409,11 @@ async def cb_ev_del(query: CallbackQuery, state: FSMContext) -> None:
         return
     try:
         await _get_client().delete_event(event_id)
-    except Exception as exc:
-        logger.error('delete_event failed: %s', exc)
+    except Exception:
+        logger.exception(
+            'delete_event failed [event_id=%s chat_id=%s message_id=%s]',
+            event_id, msg.chat.id, msg.message_id,
+        )
         if msg:
             await msg.answer('⚠️ Ошибка при удалении')
         return
@@ -446,8 +484,11 @@ async def handle_new_time(message: Message, state: FSMContext) -> None:
 
     try:
         updated = await _get_client().update_event(event_id, occurred_at=new_occurred_at)
-    except Exception as exc:
-        logger.error('update_event (time) failed: %s', exc)
+    except Exception:
+        logger.exception(
+            'update_event time failed [event_id=%s chat_id=%s message_id=%s]',
+            event_id, message.chat.id, message.message_id,
+        )
         await message.answer('⚠️ Ошибка при обновлении времени')
         await state.clear()
         return
@@ -468,15 +509,23 @@ async def handle_new_time(message: Message, state: FSMContext) -> None:
             text=_format_events({'events': events}),
             reply_markup=event_summary_keyboard(events),
         )
-    except Exception as exc:
-        logger.warning('edit_message_text failed: %s', exc)
+    except Exception:
+        logger.warning(
+            'edit_message_text failed [chat_id=%s summary_message_id=%s]',
+            chat.id, summary_msg_id,
+            exc_info=True,
+        )
     if data.get('edit_prompt_message_id'):
         try:
             await message.bot.delete_message(  # type: ignore[union-attr]
                 chat_id=chat.id, message_id=data['edit_prompt_message_id'],
             )
-        except Exception as exc:
-            logger.warning('delete prompt message failed: %s', exc)
+        except Exception:
+            logger.warning(
+                'delete prompt message failed [chat_id=%s prompt_message_id=%s]',
+                chat.id, data['edit_prompt_message_id'],
+                exc_info=True,
+            )
     await message.delete()
 
 
@@ -511,8 +560,8 @@ async def cb_ev_sub(query: CallbackQuery, state: FSMContext) -> None:
 
     try:
         old_event = await _get_client().get_event(event_id)
-    except Exception as exc:
-        logger.error('get_event failed: %s', exc)
+    except Exception:
+        logger.exception('get_event failed [event_id=%s]', event_id)
         if query.message:
             await query.message.answer('⚠️ Ошибка')
         return
@@ -522,8 +571,8 @@ async def cb_ev_sub(query: CallbackQuery, state: FSMContext) -> None:
 
     try:
         updated = await _get_client().update_event(event_id, event_type=new_type, payload=merged)
-    except Exception as exc:
-        logger.error('update_event (type) failed: %s', exc)
+    except Exception:
+        logger.exception('update_event type failed [event_id=%s new_type=%s]', event_id, new_type)
         await query.answer('⚠️ Ошибка при смене типа')
         return
 
