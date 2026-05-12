@@ -213,7 +213,6 @@ _EVENT_FORMATTERS: dict[str, Callable[[str, dict, str], str]] = {
     'diaper': _fmt_diaper,
     'sleep_start': lambda occ, _p, _d: f'😴 {occ} заснул',
     'sleep_end': lambda occ, _p, d: f'🌅 {occ} проснулся{d}',
-    'sleep_interval': lambda occ, _p, _d: f'😴 {occ} сон (интервал)',
     'weight': _fmt_weight,
     'temperature': _fmt_temperature,
     'medication': _fmt_medication,

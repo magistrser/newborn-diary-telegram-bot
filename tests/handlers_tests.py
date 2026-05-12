@@ -122,6 +122,46 @@ async def test_handle_text_replies_with_keyboard() -> None:
     )
 
 
+async def test_handle_text_handles_split_sleep_range_response() -> None:
+    from infrastructure.telegram.handlers import handle_text
+
+    start_id = '00000000-0000-0000-0000-000000000001'
+    end_id = '00000000-0000-0000-0000-000000000002'
+    events = [
+        {
+            'id': start_id,
+            'type': 'sleep_start',
+            'occurred_at': '2026-05-10T13:00:00+03:00',
+            'payload': {},
+        },
+        {
+            'id': end_id,
+            'type': 'sleep_end',
+            'occurred_at': '2026-05-10T14:30:00+03:00',
+            'payload': {'sleep_start_id': start_id, 'duration_min': 90},
+        },
+    ]
+    msg = _make_message('Спал с 13:00 до 14:30')
+    state = _make_fsm()
+    api = _make_api_client(parse_text=AsyncMock(return_value={'events': events}))
+
+    with patch('infrastructure.telegram.handlers._get_client', return_value=api), \
+         patch('infrastructure.telegram.handlers.settings') as mock_settings:
+        mock_settings.telegram.allowed_chat_ids = []
+        mock_settings.telegram.allowed_authors = []
+        await handle_text(msg, state)
+
+    msg.reply.assert_called_once()
+    reply_text = msg.reply.call_args.args[0]
+    assert '13:00 заснул' in reply_text
+    assert '14:30 проснулся (90 мин)' in reply_text
+    stored = await state.get_data()
+    assert stored[str(_SUMMARY_MSG_ID)] == events
+    keyboard = msg.reply.call_args.kwargs.get('reply_markup')
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == len(events) + 1
+
+
 async def test_handle_text_parses_events_from_configured_topic() -> None:
     from infrastructure.telegram.handlers import handle_text
 

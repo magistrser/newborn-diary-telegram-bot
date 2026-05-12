@@ -10,6 +10,15 @@ def test_is_allowed_respects_chat_allowlist() -> None:
     ) is False
 
 
+def test_is_allowed_respects_author_allowlist() -> None:
+    assert is_allowed(
+        chat_id=2,
+        author='Mila',
+        allowed_chat_ids=[],
+        allowed_authors=['Sasha'],
+    ) is False
+
+
 def test_is_allowed_accepts_matching_chat_and_author() -> None:
     assert is_allowed(
         chat_id=2,
